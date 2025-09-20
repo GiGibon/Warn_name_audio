@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>音频前测实验</title>
+  <script src="https://unpkg.com/jspsych@7.3.3"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-survey-multi-choice"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-survey-html-form"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-instructions"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-audio-button-response"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-button-response"></script>
+  <link href="https://unpkg.com/jspsych@7.3.3/css/jspsych.css" rel="stylesheet" />
+  <!-- 再引入 PapaParse (必须在你写的实验逻辑前) -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    .jspsych-btn {
+      margin: 5px;
+      padding: 8px 16px;
+      cursor: pointer;
+    }
+    #replay-btn {
+      margin: 15px 0;
+      padding: 8px 16px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #replay-btn:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .instructions {
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .question-container {
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body></body>
+<script>
+const jsPsych = initJsPsych({
+  on_finish: function() {
+    const data = jsPsych.data.get();
+    data.addProperties({
+      experiment_start: new Date(jsPsych.data.get().values()[0]?.time_start || Date.now()).toISOString(),
+      experiment_end: new Date().toISOString(),
+      duration_seconds: (jsPsych.totalTime() / 1000).toFixed(2)
+    });
+    data.localSave('csv','results.csv');
+  }
+});
+
+let info_form = {
+  type: jsPsychSurveyHtmlForm,
+  preamble: "<h2>被试信息</h2><p>请填写以下信息：</p>",
+  html: `
+    姓名: <input name="name" type="text" required><br>
+    性别: <select name="gender" required>
+            <option value="">请选择</option>
+            <option value="男">男</option>
+            <option value="女">女</option>
+          </select><br>
+    联系方式: <input name="contact" type="text" required><br>
+  `,
+  button_label: "继续"
+};
+
+let instructions = {
+  type: jsPsychInstructions,
+  pages: [
+    `<div class="instructions">
+      <h2>指导语</h2>
+      <p>您将听到一系列音频。每个音频需要先点击按钮开始播放，并且必须完整听完一次，然后回答问题。</p>
+      <p>答题页面可以点击"再听一次"按钮回放音频。</p>
+      <p>请根据您的真实感受作答，答案没有对错之分。</p>
+    </div>`
+  ],
+  show_clickable_nav: true,
+  button_label_next: "开始练习",
+  button_label_previous: "重新阅读"
+};
+
+async function loadMaterials(){
+  try {
+    let response = await fetch("https://gigibon.github.io/Warn_name_audio/materials.csv");
+    if(!response.ok) {
+      throw new Error(`HTTP错误: ${response.status}`);
+    }
+    let text = await response.text();
+
+    // 用 PapaParse 解析
+    let parsed = Papa.parse(text, {
+      header: true,
+      skipEmptyLines: true
+    });
+
+    if(parsed.errors.length > 0){
+      console.error("CSV 解析错误:", parsed.errors);
+      throw new Error("CSV 格式错误，请检查文件");
+    }
+
+    let data = parsed.data;
+
+    // 检查字段完整性
+    const requiredFields = ['audio', 'type', 'q1', 'q2', 'q3', 'q4', 'q5'];
+    data.forEach((row, index) => {
+      requiredFields.forEach(field => {
+        if(!row[field]) {
+          throw new Error(`CSV 数据不完整，第 ${index+2} 行缺少 ${field} 字段`);
+        }
+      });
+    });
+
+    let completed = JSON.parse(localStorage.getItem("completedTrials") || "[]");
+    const remaining = data.filter(row => !completed.includes(row.audio));
+    
+    if(remaining.length < data.length) {
+      console.log(`检测到已完成 ${data.length - remaining.length} 个试次，将继续剩余部分`);
+    }
+    
+    return remaining;
+
+  } catch (error) {
+    console.error("材料加载错误:", error);
+    const errorTrial = {
+      type: jsPsychHtmlButtonResponse,
+      stimulus: `<h2>实验无法启动</h2>
+                 <p>错误信息: ${error.message}</p>
+                 <p>请联系管理员解决此问题。</p>`,
+      choices: ["关闭页面"]
+    };
+    jsPsych.run([errorTrial]);
+    throw error;
+  }
+}
+
+function createTrial(row){
+  const validateAudioPlayback = async (audioUrl) => {
+    try {
+      const audio = new Audio(audioUrl);
+      const promise = audio.play();
+      if (promise !== undefined) {
+        await promise;
+      }
+      audio.pause();
+      return true;
+    } catch (error) {
+      console.error("音频验证失败:", error);
+      return false;
+    }
+  };
+
+  return [
+    {
+      type: jsPsychAudioButtonResponse,
+      stimulus: row.audio,
+      choices: ["开始播放音频"],
+      trial_ends_after_audio: true,
+      prompt: "<p>请点击按钮开始播放音频（请完整听完）</p>",
+      on_load: async function() {
+        const isValid = await validateAudioPlayback(row.audio);
+        if (!isValid) {
+          alert("音频文件无法播放，请检查网络连接或联系管理员");
+        }
+      },
+      on_error: function(error) {
+        console.error("音频播放错误:", error);
+        alert("音频播放出现问题，请重试或联系管理员");
+      }
+    },
+    {
+      type: jsPsychSurveyMultiChoice,
+      preamble: `
+        <button id="replay-btn">🔊 再听一次</button>
+        <p>请回答以下问题：</p>
+      `,
+      questions: [
+        {prompt: row.q1, name: 'Q1', options: ['陈述语气','警告语气'], required: true},
+        {
+          prompt: row.q2,
+          name: 'Q2',
+          options: ['1','2','3','4','5','6','7'],
+          required: true,
+          horizontal: true,
+          prompt_html: `
+            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+              <span>1 = 非常不适合</span>
+              <span>7 = 非常适合</span>
+            </div>
+            ${row.q2}
+          `
+        },
+        {
+          prompt: row.q3,
+          name: 'Q3',
+          options: ['1','2','3','4','5','6','7'],
+          required: true,
+          horizontal: true,
+          prompt_html: `
+            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+              <span>1 = 非常不愉快</span>
+              <span>7 = 非常愉快</span>
+            </div>
+            ${row.q3}
+          `
+        },
+        {
+          prompt: row.q4,
+          name: 'Q4',
+          options: ['1','2','3','4','5','6','7'],
+          required: true,
+          horizontal: true,
+          prompt_html: `
+            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+              <span>1 = 非常平静</span>
+              <span>7 = 非常激动</span>
+            </div>
+            ${row.q4}
+          `
+        },
+        {
+          prompt: row.q5,
+          name: 'Q5',
+          options: ['1','2','3','4','5','6','7'],
+          required: true,
+          horizontal: true,
+          prompt_html: `
+            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+              <span>1 = 完全没有掌控感</span>
+              <span>7 = 非常有掌控感</span>
+            </div>
+            ${row.q5}
+          `
+        }
+      ],
+      on_load: function() {
+        const replayBtn = document.getElementById("replay-btn");
+        replayBtn.addEventListener('click', () => {
+          const audio = new Audio(row.audio);
+          audio.play().catch(e => {
+            alert("播放失败，请确保已完成首次音频播放");
+            console.error("音频重播错误:", e);
+          });
+        });
+      },
+      on_finish: function(data){
+        data.phase = row.type; 
+        data.audio_filename = row.audio.split('/').pop(); 
+        let completed = JSON.parse(localStorage.getItem("completedTrials") || "[]");
+        if(!completed.includes(row.audio)){
+          completed.push(row.audio);
+          localStorage.setItem("completedTrials", JSON.stringify(completed));
+        }
+      }
+    }
+  ];
+}
+
+function createPracticeTimeline(materials){
+  let practice = materials.filter(m => m.type === "practice");
+  let timeline = [];
+  
+  if(practice.length === 0) {
+    console.warn("未找到练习试次");
+    return timeline;
+  }
+  
+  practice.forEach(row => timeline.push(...createTrial(row)));
+
+  timeline.push({
+    type: jsPsychHtmlButtonResponse,
+    stimulus: "<p>练习结束。请选择操作：</p>",
+    choices: ["重新练习","进入正式实验"],
+    button_html: '<button class="jspsych-btn">%choice%</button>',
+    on_finish: function(data){
+      if(data.response == 0){
+        let completed = JSON.parse(localStorage.getItem("completedTrials") || "[]");
+        completed = completed.filter(item => !practice.some(p => p.audio === item));
+        localStorage.setItem("completedTrials", JSON.stringify(completed));
+        
+        jsPsych.addNodeToEndOfTimeline(createPracticeTimeline(materials));
+      }
+    }
+  });
+  return timeline;
+}
+
+function createFormalTimeline(materials){
+  let formal = materials.filter(m => m.type === "formal");
+  
+  if(formal.length === 0) {
+    return [{
+      type: jsPsychHtmlButtonResponse,
+      stimulus: "<h2>警告</h2><p>未找到正式实验试次</p>",
+      choices: ["返回"]
+    }];
+  }
+  
+  let shuffledFormal = jsPsych.randomization.shuffle(formal);
+  let timeline = [];
+  
+  shuffledFormal.forEach(row => timeline.push(...createTrial(row)));
+  
+  timeline.push({
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `<h2>实验结束！</h2>
+               <p>感谢您完成所有实验内容。</p>
+               <p>您的实验数据已自动下载为CSV文件。</p>
+               <p>如果您需要重新进行实验，可以刷新页面并选择"从头开始"。</p>`,
+    choices: ["完成并关闭"],
+    button_html: '<button class="jspsych-btn">%choice%</button>',
+    on_finish: function() {
+      // localStorage.removeItem("completedTrials");
+    }
+  });
+  
+  return timeline;
+}
+
+async function startExperiment(){
+  try {
+    let completed = JSON.parse(localStorage.getItem("completedTrials") || "[]");
+    if(completed.length > 0) {
+      const continueProgress = confirm(`检测到您有未完成的实验进度。\n\n是否继续上次的进度？\n- 选择"确定"将继续之前的实验\n- 选择"取消"将清除记录并从头开始`);
+      
+      if(!continueProgress) { 
+        localStorage.removeItem("completedTrials");
+        completed = [];
+      }
+    }
+
+    let timeline = [];
+    timeline.push(info_form);
+    timeline.push(instructions);
+
+    let materials = await loadMaterials();
+    
+    if(materials.length === 0) {
+      timeline.push({
+        type: jsPsychHtmlButtonResponse,
+        stimulus: "<h2>实验已完成</h2><p>您已完成所有实验内容，感谢参与！</p>",
+        choices: ["关闭页面"]
+      });
+    } else {
+      timeline = timeline.concat(createPracticeTimeline(materials));
+      timeline = timeline.concat(createFormalTimeline(materials));
+    }
+
+    jsPsych.run(timeline);
+  } catch (error) {
+    console.error("实验启动失败:", error);
+  }
+}
+
+startExperiment();
+</script>
+</html>
