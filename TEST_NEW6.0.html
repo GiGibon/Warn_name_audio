@@ -1,0 +1,1653 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音频感知实验</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    
+    <!-- Tailwind 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#10B981',
+                        accent: '#6366F1',
+                        neutral: '#64748B',
+                        dark: '#1E293B',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .transition-all-300 {
+                transition: all 300ms ease-in-out;
+            }
+            .scale-hover {
+                @apply hover:scale-105 transition-all duration-300;
+            }
+            .card-shadow {
+                box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            }
+            .radio-disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+            .radio-enabled {
+                opacity: 1;
+                cursor: pointer;
+            }
+            .audio-progress {
+                height: 4px;
+                background-color: #e5e7eb;
+                border-radius: 2px;
+                cursor: pointer;
+                transition: height 0.2s;
+            }
+            .audio-progress:hover {
+                height: 6px;
+            }
+            .audio-progress-fill {
+                height: 100%;
+                background-color: #3B82F6;
+                border-radius: 2px;
+                width: 0%;
+            }
+            .audio-time {
+                font-size: 0.875rem;
+                color: #64748B;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans text-dark min-h-screen">
+    <!-- 错误提示容器 -->
+    <div id="error-container" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-2xl hidden">
+        <div class="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg shadow-md">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <i class="fa fa-exclamation-circle text-red-500"></i>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm text-red-700 error-message"></p>
+                    <div class="mt-2">
+                        <button id="retry-load" class="text-xs bg-red-100 text-red-800 px-3 py-1 rounded hover:bg-red-200 transition-colors">
+                            重试
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <!-- 欢迎页面 -->
+        <div id="welcome-page" class="page active">
+            <div class="bg-white rounded-xl p-8 card-shadow">
+                <h1 class="text-[clamp(1.8rem,5vw,2.5rem)] font-bold text-center text-primary mb-6">音频感知实验</h1>
+                <p class="text-lg text-center mb-8">感谢您参与本次实验，请填写以下信息开始实验</p>
+                
+                <form id="participant-form" class="space-y-6">
+                    <div>
+                        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">姓名</label>
+                        <input type="text" id="name" name="name" required
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-all-300"
+                            placeholder="请输入您的姓名">
+                    </div>
+                    
+                    <div>
+                        <label for="id" class="block text-sm font-medium text-gray-700 mb-1">编号</label>
+                        <input type="text" id="id" name="id" required
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-all-300"
+                            placeholder="请输入您的编号">
+                    </div>
+                    
+                    <div class="pt-4">
+                        <button type="submit" id="start-btn"
+                            class="w-full bg-primary hover:bg-primary/90 text-white font-medium py-3 px-6 rounded-lg transition-all-300 flex items-center justify-center">
+                            <span>开始实验</span>
+                            <i class="fa fa-arrow-right ml-2"></i>
+                        </button>
+                    </div>
+                </form>
+                
+                <div id="resume-notice" class="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg hidden">
+                    <p class="text-yellow-800 text-sm flex items-center">
+                        <i class="fa fa-info-circle mr-2"></i>
+                        <span>检测到您有未完成的实验，点击开始按钮可继续</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 指导语页面 -->
+        <div id="instructions-page" class="page hidden">
+            <div class="bg-white rounded-xl p-8 card-shadow">
+                <h1 class="text-2xl font-bold text-center text-primary mb-6">实验指导语</h1>
+                
+                <div class="space-y-4 mb-8 text-gray-700 leading-relaxed">
+                    <p>欢迎参加本次音频感知实验，在实验过程中，请您仔细聆听音频并根据听到的内容回答相关问题。</p>
+                    
+                    <p>实验将分为两个部分：</p>
+                    <ol class="list-decimal pl-6 mb-2">
+                        <li>练习部分：帮助您熟悉实验流程和操作方式</li>
+                        <li>正式实验部分：需要您认真完成的实验内容</li>
+                    </ol>
+                    
+                    <p>每个试次的操作流程：</p>
+                    <ol class="list-decimal pl-6 mb-2">
+                        <li>聆听音频（您可以重复收听）</li>
+                        <li>听完音频后，回答页面上的5个问题</li>
+                        <li>完成所有问题后，点击"下一个"按钮进入下一个试次</li>
+                    </ol>
+                    
+                    <p>请注意：</p>
+                    <ul class="list-disc pl-6">
+                        <li>请在安静的环境中完成实验</li>
+                        <li>请务必听完音频后再进行作答（未听完时答题按钮将处于禁用状态）</li>
+                        <li>回答没有对错之分，请根据您的真实感受进行选择</li>
+                        <li>实验过程中请勿刷新页面，以免数据丢失</li>
+                        <li>音频播放速度已固定，无法调整</li>
+                    </ul>
+                </div>
+                
+                <div class="flex justify-between pt-4">
+                    <button id="back-to-welcome"
+                        class="px-6 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all-300">
+                        <i class="fa fa-arrow-left mr-2"></i>返回
+                    </button>
+                    
+                    <button id="start-practice"
+                        class="px-6 py-2 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg transition-all-300">
+                        开始练习
+                        <i class="fa fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 练习试次页面 -->
+        <div id="practice-trial-page" class="page hidden">
+            <div class="bg-white rounded-xl p-8 card-shadow">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-primary">练习试次 <span id="practice-trial-number"></span></h2>
+                    <div class="text-sm text-gray-500" id="practice-progress"></div>
+                </div>
+                
+                <!-- 音频播放区域 -->
+                <div class="mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
+                    <h3 class="font-medium mb-4">请聆听以下音频：</h3>
+                    
+                    <!-- 自定义音频播放器 -->
+                    <div class="audio-player w-full">
+                        <div class="flex items-center mb-3">
+                            <button id="practice-play-pause" class="text-primary hover:text-primary/80 scale-hover mr-4">
+                                <i class="fa fa-play text-2xl"></i>
+                            </button>
+                            <div class="flex-1">
+                                <div class="audio-progress" id="practice-progress-bar">
+                                    <div class="audio-progress-fill" id="practice-progress-fill"></div>
+                                </div>
+                                <div class="flex justify-between mt-2">
+                                    <span class="audio-time" id="practice-current-time">0:00</span>
+                                    <span class="audio-time" id="practice-duration">0:00</span>
+                                </div>
+                            </div>
+                            <button id="practice-replay" class="ml-4 text-primary hover:text-primary/80 scale-hover">
+                                <i class="fa fa-refresh text-xl"></i>
+                            </button>
+                        </div>
+                        <!-- 隐藏原生音频元素 -->
+                        <audio id="practice-audio" preload="none" class="hidden">
+                            您的浏览器不支持音频播放
+                         </audio>
+                    </div>
+                    
+                    <p id="practice-audio-warning" class="text-amber-500 text-sm mt-2">
+                        <i class="fa fa-info-circle mr-1"></i>请先完整听完音频后才能开始答题
+                    </p>
+                </div>
+                
+                <!-- 问题区域 -->
+                <div id="practice-questions" class="space-y-8 mb-8">
+                    <!-- 问题1：二选一 -->
+                    <div class="question" data-question="1">
+                        <h3 class="font-medium text-lg mb-3">1. <span class="question-text"></span></h3>
+                        <div class="flex flex-wrap gap-4">
+                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-all-300 radio-disabled">
+                                <input type="radio" name="q1" value="陈述语气" class="mr-2" disabled>
+                                <span>陈述语气</span>
+                            </label>
+                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-all-300 radio-disabled">
+                                <input type="radio" name="q1" value="警告语气" class="mr-2" disabled>
+                                <span>警告语气</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- 问题2：李克特量表 -->
+                    <div class="question" data-question="2">
+                        <h3 class="font-medium text-lg mb-3">2. <span class="question-text"></span></h3>
+                        <div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                            <p class="text-gray-600 text-sm"><strong>情境：</strong><span id="q2-context"></span></p>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500">非常不适合</span>
+                            <div class="flex gap-1">
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q2" value="1" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">1</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q2" value="2" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">2</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q2" value="3" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">3</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q2" value="4" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">4</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q2" value="5" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">5</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q2" value="6" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">6</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q2" value="7" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">7</div>
+                                </label>
+                            </div>
+                            <span class="text-sm text-gray-500">非常适合</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 问题3：李克特量表 -->
+                    <div class="question" data-question="3">
+                        <h3 class="font-medium text-lg mb-3">3. <span class="question-text"></span></h3>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500">非常不愉快</span>
+                            <div class="flex gap-1">
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q3" value="1" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">1</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q3" value="2" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">2</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q3" value="3" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">3</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q3" value="4" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">4</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q3" value="5" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">5</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q3" value="6" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">6</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q3" value="7" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">7</div>
+                                </label>
+                            </div>
+                            <span class="text-sm text-gray-500">非常愉快</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 问题4：李克特量表 -->
+                    <div class="question" data-question="4">
+                        <h3 class="font-medium text-lg mb-3">4. <span class="question-text"></span></h3>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500">非常平静</span>
+                            <div class="flex gap-1">
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q4" value="1" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">1</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q4" value="2" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">2</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q4" value="3" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">3</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q4" value="4" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">4</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q4" value="5" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">5</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q4" value="6" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">6</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q4" value="7" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">7</div>
+                                </label>
+                            </div>
+                            <span class="text-sm text-gray-500">非常激动</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 问题5：李克特量表 -->
+                    <div class="question" data-question="5">
+                        <h3 class="font-medium text-lg mb-3">5. <span class="question-text"></span></h3>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500">完全没有掌控感</span>
+                            <div class="flex gap-1">
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q5" value="1" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">1</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q5" value="2" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">2</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q5" value="3" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">3</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q5" value="4" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">4</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q5" value="5" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">5</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q5" value="6" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">6</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="q5" value="7" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">7</div>
+                                </label>
+                            </div>
+                            <span class="text-sm text-gray-500">非常有掌控感</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-between pt-4 border-t border-gray-100">
+                    <button id="practice-prev" class="px-6 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all-300 hidden">
+                        <i class="fa fa-arrow-left mr-2"></i>上一个
+                    </button>
+                    
+                    <div class="ml-auto">
+                        <button id="practice-next" class="px-6 py-2 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg transition-all-300">
+                            下一个
+                            <i class="fa fa-arrow-right ml-2"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 练习完成页面 -->
+        <div id="practice-complete-page" class="page hidden">
+            <div class="bg-white rounded-xl p-8 card-shadow text-center">
+                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <i class="fa fa-check text-2xl text-green-500"></i>
+                </div>
+                
+                <h2 class="text-2xl font-bold text-primary mb-4">练习完成</h2>
+                <p class="text-gray-600 mb-8 max-w-lg mx-auto">
+                    您已完成所有练习试次。如果您想再练习一次，可以点击"重新练习"按钮；如果您已准备好开始正式实验，请点击"开始正式实验"按钮。
+                </p>
+                
+                <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                    <button id="retry-practice"
+                        class="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all-300">
+                        <i class="fa fa-refresh mr-2"></i>重新练习
+                    </button>
+                    
+                    <button id="start-formal"
+                        class="px-6 py-3 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg transition-all-300">
+                        开始正式实验
+                        <i class="fa fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 正式实验试次页面 -->
+        <div id="formal-trial-page" class="page hidden">
+            <div class="bg-white rounded-xl p-8 card-shadow">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-primary">正式实验 <span id="formal-trial-number"></span></h2>
+                    <div class="text-sm text-gray-500" id="formal-progress"></div>
+                </div>
+                
+                <!-- 音频播放区域 -->
+                <div class="mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
+                    <h3 class="font-medium mb-4">请聆听以下音频：</h3>
+                    
+                    <!-- 自定义音频播放器 -->
+                    <div class="audio-player w-full">
+                        <div class="flex items-center mb-3">
+                            <button id="formal-play-pause" class="text-primary hover:text-primary/80 scale-hover mr-4">
+                                <i class="fa fa-play text-2xl"></i>
+                            </button>
+                            <div class="flex-1">
+                                <div class="audio-progress" id="formal-progress-bar">
+                                    <div class="audio-progress-fill" id="formal-progress-fill"></div>
+                                </div>
+                                <div class="flex justify-between mt-2">
+                                    <span class="audio-time" id="formal-current-time">0:00</span>
+                                    <span class="audio-time" id="formal-duration">0:00</span>
+                                </div>
+                            </div>
+                            <button id="formal-replay" class="ml-4 text-primary hover:text-primary/80 scale-hover">
+                                <i class="fa fa-refresh text-xl"></i>
+                            </button>
+                        </div>
+                        <!-- 隐藏原生音频元素 -->
+                        <audio id="formal-audio" preload="none" class="hidden">
+                            您的浏览器不支持音频播放
+                         </audio>
+                    </div>
+                    
+                    <p id="formal-audio-warning" class="text-amber-500 text-sm mt-2">
+                        <i class="fa fa-info-circle mr-1"></i>请先完整听完音频后才能开始答题
+                    </p>
+                </div>
+                
+                <!-- 问题区域 -->
+                <div id="formal-questions" class="space-y-8 mb-8">
+                    <!-- 问题1：二选一 -->
+                    <div class="question" data-question="1">
+                        <h3 class="font-medium text-lg mb-3">1. <span class="question-text"></span></h3>
+                        <div class="flex flex-wrap gap-4">
+                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-all-300 radio-disabled">
+                                <input type="radio" name="fq1" value="陈述语气" class="mr-2" disabled>
+                                <span>陈述语气</span>
+                            </label>
+                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-all-300 radio-disabled">
+                                <input type="radio" name="fq1" value="警告语气" class="mr-2" disabled>
+                                <span>警告语气</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- 问题2：李克特量表 -->
+                    <div class="question" data-question="2">
+                        <h3 class="font-medium text-lg mb-3">2. <span class="question-text"></span></h3>
+                        <div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                            <p class="text-gray-600 text-sm"><strong>情境：</strong><span id="fq2-context"></span></p>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500">非常不适合</span>
+                            <div class="flex gap-1">
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq2" value="1" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">1</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq2" value="2" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">2</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq2" value="3" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">3</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq2" value="4" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">4</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq2" value="5" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">5</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq2" value="6" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">6</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq2" value="7" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">7</div>
+                                </label>
+                            </div>
+                            <span class="text-sm text-gray-500">非常适合</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 问题3：李克特量表 -->
+                    <div class="question" data-question="3">
+                        <h3 class="font-medium text-lg mb-3">3. <span class="question-text"></span></h3>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500">非常不愉快</span>
+                            <div class="flex gap-1">
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq3" value="1" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">1</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq3" value="2" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">2</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq3" value="3" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">3</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq3" value="4" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">4</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq3" value="5" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">5</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq3" value="6" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">6</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq3" value="7" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">7</div>
+                                </label>
+                            </div>
+                            <span class="text-sm text-gray-500">非常愉快</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 问题4：李克特量表 -->
+                    <div class="question" data-question="4">
+                        <h3 class="font-medium text-lg mb-3">4. <span class="question-text"></span></h3>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500">非常平静</span>
+                            <div class="flex gap-1">
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq4" value="1" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">1</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq4" value="2" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">2</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq4" value="3" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">3</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq4" value="4" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">4</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq4" value="5" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">5</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq4" value="6" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">6</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq4" value="7" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">7</div>
+                                </label>
+                            </div>
+                            <span class="text-sm text-gray-500">非常激动</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 问题5：李克特量表 -->
+                    <div class="question" data-question="5">
+                        <h3 class="font-medium text-lg mb-3">5. <span class="question-text"></span></h3>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500">完全没有掌控感</span>
+                            <div class="flex gap-1">
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq5" value="1" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">1</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq5" value="2" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">2</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq5" value="3" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">3</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq5" value="4" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">4</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq5" value="5" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">5</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq5" value="6" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">6</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="fq5" value="7" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">7</div>
+                                </label>
+                            </div>
+                            <span class="text-sm text-gray-500">非常有掌控感</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-between pt-4 border-t border-gray-100">
+                    <button id="formal-prev" class="px-6 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all-300 hidden">
+                        <i class="fa fa-arrow-left mr-2"></i>上一个
+                    </button>
+                    
+                    <div class="ml-auto">
+                        <button id="formal-next" class="px-6 py-2 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg transition-all-300">
+                            下一个
+                            <i class="fa fa-arrow-right ml-2"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 实验完成页面 -->
+        <div id="complete-page" class="page hidden">
+            <div class="bg-white rounded-xl p-8 card-shadow text-center">
+                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <i class="fa fa-trophy text-2xl text-green-500"></i>
+                </div>
+                
+                <h2 class="text-2xl font-bold text-primary mb-4">实验完成</h2>
+                <p class="text-gray-600 mb-8 max-w-lg mx-auto">
+                    恭喜您完成了所有实验内容！感谢您的参与。请下载您的实验数据并提交给实验者。
+                </p>
+                
+                <div class="mb-8">
+                    <button id="download-data"
+                        class="px-6 py-3 bg-secondary hover:bg-secondary/90 text-white font-medium rounded-lg transition-all-300 inline-flex items-center">
+                        <i class="fa fa-download mr-2"></i>下载实验数据
+                    </button>
+                </div>
+                
+                <p class="text-gray-500 text-sm">
+                    提示：请保存好您的实验数据文件，如有需要可联系实验者
+                </p>
+            </div>
+        </div>
+        
+        <!-- 加载中提示 -->
+        <div id="loading" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+            <div class="bg-white p-6 rounded-xl flex items-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mr-4"></div>
+                <span>加载中，请稍候...</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 实验数据和状态管理
+        const experimentState = {
+            participant: {
+                name: '',
+                id: ''
+            },
+            materials: {
+                practice: [],
+                formal: [],
+                formalOrder: [] // 存储正式实验的随机顺序（原始索引）
+            },
+            currentTrial: 0,
+            currentPhase: 'practice', // 'practice' 或 'formal'
+            results: [],
+            audioPlayed: false,
+            loaded: false,
+            initialized: false // 标记是否已初始化试次顺序
+        };
+        
+        // DOM 元素
+        const pages = {
+            welcome: document.getElementById('welcome-page'),
+            instructions: document.getElementById('instructions-page'),
+            practiceTrial: document.getElementById('practice-trial-page'),
+            practiceComplete: document.getElementById('practice-complete-page'),
+            formalTrial: document.getElementById('formal-trial-page'),
+            complete: document.getElementById('complete-page')
+        };
+        
+        // 音频元素和控制
+        const audioElements = {
+            practice: {
+                element: document.getElementById('practice-audio'),
+                playPauseBtn: document.getElementById('practice-play-pause'),
+                progressBar: document.getElementById('practice-progress-bar'),
+                progressFill: document.getElementById('practice-progress-fill'),
+                currentTime: document.getElementById('practice-current-time'),
+                duration: document.getElementById('practice-duration'),
+                replayBtn: document.getElementById('practice-replay'),
+                isPlaying: false
+            },
+            formal: {
+                element: document.getElementById('formal-audio'),
+                playPauseBtn: document.getElementById('formal-play-pause'),
+                progressBar: document.getElementById('formal-progress-bar'),
+                progressFill: document.getElementById('formal-progress-fill'),
+                currentTime: document.getElementById('formal-current-time'),
+                duration: document.getElementById('formal-duration'),
+                replayBtn: document.getElementById('formal-replay'),
+                isPlaying: false
+            }
+        };
+        
+        // 工具函数：显示指定页面，隐藏其他页面
+        function showPage(pageId) {
+            Object.keys(pages).forEach(key => {
+                pages[key].classList.add('hidden');
+            });
+            document.getElementById(`${pageId}-page`).classList.remove('hidden');
+        }
+        
+        // 工具函数：显示加载状态
+        function showLoading() {
+            document.getElementById('loading').classList.remove('hidden');
+        }
+        
+        // 工具函数：隐藏加载状态
+        function hideLoading() {
+            document.getElementById('loading').classList.add('hidden');
+        }
+        
+        // 格式化时间（秒 -> MM:SS）
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${minutes}:${secs < 10 ? '0' + secs : secs}`;
+        }
+        
+        // 更新音频进度条和时间显示
+        function updateAudioProgress(phase) {
+            const audio = audioElements[phase];
+            if (!audio.element.duration) return;
+            
+            const percent = (audio.element.currentTime / audio.element.duration) * 100;
+            audio.progressFill.style.width = `${percent}%`;
+            audio.currentTime.textContent = formatTime(audio.element.currentTime);
+        }
+        
+        // 设置音频播放/暂停功能
+        function setupAudioControls(phase) {
+            const audio = audioElements[phase];
+            
+            // 播放/暂停按钮
+            audio.playPauseBtn.addEventListener('click', function() {
+                if (audio.element.paused) {
+                    // 确保播放速度为1.0（正常速度）
+                    audio.element.playbackRate = 1.0;
+                    audio.element.play();
+                    audio.isPlaying = true;
+                    audio.playPauseBtn.innerHTML = '<i class="fa fa-pause text-2xl"></i>';
+                } else {
+                    audio.element.pause();
+                    audio.isPlaying = false;
+                    audio.playPauseBtn.innerHTML = '<i class="fa fa-play text-2xl"></i>';
+                }
+            });
+            
+            // 进度条点击跳转
+            audio.progressBar.addEventListener('click', function(e) {
+                const rect = this.getBoundingClientRect();
+                const pos = (e.clientX - rect.left) / rect.width;
+                audio.element.currentTime = pos * audio.element.duration;
+                updateAudioProgress(phase);
+            });
+            
+            // 音频时间更新事件
+            audio.element.addEventListener('timeupdate', function() {
+                updateAudioProgress(phase);
+            });
+            
+            // 音频加载完成事件（获取总时长）
+            audio.element.addEventListener('loadedmetadata', function() {
+                audio.duration.textContent = formatTime(audio.element.duration);
+            });
+            
+            // 音频播放结束事件
+            audio.element.addEventListener('ended', function() {
+                audio.isPlaying = false;
+                audio.playPauseBtn.innerHTML = '<i class="fa fa-play text-2xl"></i>';
+            });
+            
+            // 重新播放按钮
+            audio.replayBtn.addEventListener('click', function() {
+                audio.element.currentTime = 0;
+                audio.element.playbackRate = 1.0;
+                audio.element.play();
+                audio.isPlaying = true;
+                audio.playPauseBtn.innerHTML = '<i class="fa fa-pause text-2xl"></i>';
+            });
+            
+            // 防止通过JavaScript修改播放速度
+            Object.defineProperty(audio.element, 'playbackRate', {
+                set: function(value) {
+                    // 忽略任何尝试修改播放速度的操作，始终保持1.0
+                    Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'playbackRate').set.call(this, 1.0);
+                }
+            });
+        }
+        
+        // 生成基于字符串的哈希值，用于种子随机数生成器
+        function stringToHash(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                const char = str.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // 转换为32位整数
+            }
+            return Math.abs(hash);
+        }
+        
+        // 基于种子的随机数生成器
+        function seededRandom(seed) {
+            // 使用简单的线性同余生成器
+            const a = 1664525;
+            const c = 1013904223;
+            const m = Math.pow(2, 32);
+            
+            // 更新种子
+            seed = (a * seed + c) % m;
+            
+            // 返回0到1之间的随机数
+            return { value: seed / m, newSeed: seed };
+        }
+        
+        // 工具函数：使用种子打乱数组顺序（Fisher-Yates 洗牌算法）
+        function shuffleArrayWithSeed(array, seed) {
+            const newArray = [...array];
+            let currentSeed = seed;
+            
+            for (let i = newArray.length - 1; i > 0; i--) {
+                // 生成基于种子的随机数
+                const result = seededRandom(currentSeed);
+                currentSeed = result.newSeed;
+                
+                // 获取0到i之间的整数
+                const j = Math.floor(result.value * (i + 1));
+                
+                // 交换元素
+                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+            }
+            
+            return newArray;
+        }
+        
+        // 工具函数：保存实验状态到本地存储
+        function saveState() {
+            localStorage.setItem(`experimentState_${experimentState.participant.id}`, JSON.stringify(experimentState));
+        }
+        
+        // 工具函数：从本地存储加载实验状态
+        function loadState(participantId) {
+            const savedState = localStorage.getItem(`experimentState_${participantId}`);
+            if (savedState) {
+                const parsedState = JSON.parse(savedState);
+                // 合并保存的状态，但保留当前的原始材料，只恢复排序后的顺序
+                const originalMaterials = experimentState.materials;
+                Object.assign(experimentState, parsedState);
+                
+                // 恢复材料引用，确保我们使用最新的材料数据但保留已保存的顺序
+                experimentState.materials.practice = originalMaterials.practice;
+                experimentState.materials.formal = originalMaterials.formal;
+                
+                return true;
+            }
+            return false;
+        }
+        
+        // 初始化正式实验的试次顺序
+        function initializeFormalOrder() {
+            // 如果已有保存的顺序，则使用它
+            if (experimentState.materials.formalOrder.length > 0) {
+                return;
+            }
+            
+            // 使用被试ID生成唯一的种子，确保不同被试有不同的顺序
+            const seed = stringToHash(experimentState.participant.id);
+            
+            // 创建索引数组 [0, 1, 2, ..., n-1]（从0开始，对应原始数据索引）
+            const indices = Array.from({length: experimentState.materials.formal.length}, (_, i) => i);
+            
+            // 使用种子打乱索引顺序
+            experimentState.materials.formalOrder = shuffleArrayWithSeed(indices, seed);
+        }
+        
+        // 验证CSV行是否有效
+        function isValidCsvRow(row, expectedFields) {
+            // 检查行是否为空
+            if (!row || Object.keys(row).length === 0) return false;
+            
+            // 检查是否包含所有必要的字段
+            return expectedFields.every(field => row[field] !== undefined);
+        }
+        
+        // 加载实验材料
+        function loadMaterials() {
+            showLoading();
+            return new Promise((resolve, reject) => {
+                // 材料CSV的URL
+                const materialsUrl = 'https://gigibon.github.io/Warn_name_audio/materials.csv';
+                
+                // 预期的CSV字段
+                const expectedFields = ['audio', 'type', 'context', 'q1', 'q2', 'q3', 'q4', 'q5'];
+                
+                Papa.parse(materialsUrl, {
+                    download: true,
+                    header: true,
+                    skipEmptyLines: true, // 跳过空行
+                    complete: function(results) {
+                        hideLoading();
+                        
+                        // 处理解析错误
+                        if (results.errors.length > 0) {
+                            console.error('材料加载错误详情:', results.errors);
+                            
+                            // 过滤掉不影响整体解析的字段不匹配错误
+                            const criticalErrors = results.errors.filter(error => 
+                                error.code !== 'TooFewFields' && error.code !== 'TooManyFields'
+                            );
+                            
+                            // 显示详细错误信息
+                            const errorContainer = document.getElementById('error-container');
+                            const errorMessage = errorContainer.querySelector('.error-message');
+                            
+                            if (criticalErrors.length > 0) {
+                                // 有严重错误
+                                let errorText = '加载实验材料失败: ';
+                                if (criticalErrors[0].code === 'HTTP_ERROR') {
+                                    errorText += '无法连接到材料服务器，请检查网络连接或稍后再试。';
+                                } else {
+                                    errorText += '材料格式有误，请联系管理员。';
+                                }
+                                
+                                errorMessage.textContent = errorText;
+                                errorContainer.classList.remove('hidden');
+                                
+                                reject(criticalErrors);
+                                return;
+                            }
+                        }
+                        
+                        // 验证材料数据是否有效
+                        if (!results.data || results.data.length === 0) {
+                            const errorMsg = '未找到有效的实验材料数据';
+                            console.error(errorMsg);
+                            
+                            // 显示错误信息
+                            const errorContainer = document.getElementById('error-container');
+                            const errorMessage = errorContainer.querySelector('.error-message');
+                            errorMessage.textContent = errorMsg;
+                            errorContainer.classList.remove('hidden');
+                            
+                            reject(new Error(errorMsg));
+                            return;
+                        }
+                        
+                        // 过滤并验证每一行数据
+                        const validRows = results.data.filter(row => {
+                            const isValid = isValidCsvRow(row, expectedFields);
+                            if (!isValid) {
+                                console.warn('过滤掉无效的CSV行:', row);
+                            }
+                            return isValid;
+                        });
+                        
+                        if (validRows.length === 0) {
+                            const errorMsg = '未找到有效的实验材料数据，请检查CSV格式';
+                            console.error(errorMsg);
+                            
+                            // 显示错误信息
+                            const errorContainer = document.getElementById('error-container');
+                            const errorMessage = errorContainer.querySelector('.error-message');
+                            errorMessage.textContent = errorMsg;
+                            errorContainer.classList.remove('hidden');
+                            
+                            reject(new Error(errorMsg));
+                            return;
+                        }
+                        
+                        // 分离练习试次和正式试次
+                        experimentState.materials.practice = validRows.filter(item => item.type === 'practice');
+                        experimentState.materials.formal = validRows.filter(item => item.type === 'formal');
+                        
+                        // 验证是否有足够的实验材料
+                        if (experimentState.materials.practice.length === 0) {
+                            const errorMsg = '未找到练习材料，请检查CSV中的type字段是否包含"practice"';
+                            console.error(errorMsg);
+                            
+                            // 显示错误信息
+                            const errorContainer = document.getElementById('error-container');
+                            const errorMessage = errorContainer.querySelector('.error-message');
+                            errorMessage.textContent = errorMsg;
+                            errorContainer.classList.remove('hidden');
+                            
+                            reject(new Error(errorMsg));
+                            return;
+                        }
+                        
+                        if (experimentState.materials.formal.length === 0) {
+                            const errorMsg = '未找到正式实验材料，请检查CSV中的type字段是否包含"formal"';
+                            console.error(errorMsg);
+                            
+                            // 显示错误信息
+                            const errorContainer = document.getElementById('error-container');
+                            const errorMessage = errorContainer.querySelector('.error-message');
+                            errorMessage.textContent = errorMsg;
+                            errorContainer.classList.remove('hidden');
+                            
+                            reject(new Error(errorMsg));
+                            return;
+                        }
+                        
+                        // 隐藏错误容器（如果显示的话）
+                        document.getElementById('error-container').classList.add('hidden');
+                        
+                        experimentState.loaded = true;
+                        resolve();
+                    },
+                    error: function(error) {
+                        hideLoading();
+                        console.error('材料加载失败:', error);
+                        
+                        // 显示错误信息
+                        const errorContainer = document.getElementById('error-container');
+                        const errorMessage = errorContainer.querySelector('.error-message');
+                        errorMessage.textContent = `加载实验材料时发生错误: ${error.message || '网络连接问题'}`;
+                        errorContainer.classList.remove('hidden');
+                        
+                        reject(error);
+                    }
+                });
+            });
+        }
+        
+        // 添加重试加载材料的事件监听
+        function setupErrorHandlers() {
+            document.getElementById('retry-load').addEventListener('click', function() {
+                document.getElementById('error-container').classList.add('hidden');
+                loadMaterials().then(() => {
+                    alert('材料加载成功，可以开始实验了');
+                });
+            });
+        }
+        
+        // 启用指定试次的所有单选按钮
+        function enableRadioButtons(phase) {
+            const prefix = phase === 'practice' ? '' : 'f';
+            const questionsContainer = document.getElementById(`${phase}-questions`);
+            
+            // 启用所有单选按钮
+            questionsContainer.querySelectorAll('input[type="radio"]').forEach(radio => {
+                radio.disabled = false;
+            });
+            
+            // 更新标签样式
+            questionsContainer.querySelectorAll('label').forEach(label => {
+                label.classList.remove('radio-disabled');
+                label.classList.add('radio-enabled');
+            });
+            
+            // 更新提示信息
+            document.getElementById(`${phase}-audio-warning`).classList.add('hidden');
+        }
+        
+        // 初始化练习试次
+        function initPracticeTrial(trialIndex) {
+            // 从1开始计数
+            const displayIndex = trialIndex + 1;
+            const trial = experimentState.materials.practice[trialIndex];
+            if (!trial) return;
+            
+            // 更新试次编号和进度
+            document.getElementById('practice-trial-number').textContent = `${displayIndex}`;
+            document.getElementById('practice-progress').textContent = 
+                `进度：${displayIndex}/${experimentState.materials.practice.length}`;
+            
+            // 更新音频
+            const audio = audioElements.practice;
+            audio.element.src = trial.audio;
+            audio.progressFill.style.width = '0%';
+            audio.currentTime.textContent = '0:00';
+            audio.duration.textContent = '0:00';
+            audio.playPauseBtn.innerHTML = '<i class="fa fa-play text-2xl"></i>';
+            audio.isPlaying = false;
+            
+            experimentState.audioPlayed = false;
+            document.getElementById('practice-audio-warning').classList.remove('hidden');
+            
+            // 更新问题
+            for (let i = 1; i <= 5; i++) {
+                document.querySelector(`#practice-questions .question[data-question="${i}"] .question-text`).textContent = trial[`q${i}`];
+            }
+            
+            // 为问题2添加情境
+            document.getElementById('q2-context').textContent = trial.context;
+            
+            // 重置问题答案和禁用状态
+            document.querySelectorAll('#practice-questions input[type="radio"]').forEach(radio => {
+                radio.checked = false;
+                radio.disabled = true; // 初始禁用
+                const parentDiv = radio.parentElement.querySelector('div');
+                if (parentDiv) parentDiv.classList.remove('bg-primary/20', 'border-primary');
+                else radio.parentElement.classList.remove('bg-primary/20', 'border-primary');
+            });
+            
+            // 重置标签样式
+            document.querySelectorAll('#practice-questions label').forEach(label => {
+                label.classList.remove('radio-enabled');
+                label.classList.add('radio-disabled');
+            });
+            
+            // 显示/隐藏上一个按钮
+            document.getElementById('practice-prev').classList.toggle('hidden', trialIndex === 0);
+            
+            // 为单选按钮添加样式处理
+            document.querySelectorAll('#practice-questions input[type="radio"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    // 清除同组其他选项的样式
+                    document.querySelectorAll(`input[name="${this.name}"]`).forEach(r => {
+                        const parentDiv = r.parentElement.querySelector('div');
+                        if (parentDiv) {
+                            parentDiv.classList.remove('bg-primary/20', 'border-primary');
+                        } else {
+                            r.parentElement.classList.remove('bg-primary/20', 'border-primary');
+                        }
+                    });
+                    
+                    // 设置当前选项的样式
+                    const parentDiv = this.parentElement.querySelector('div');
+                    if (parentDiv) {
+                        parentDiv.classList.add('bg-primary/20', 'border-primary');
+                    } else {
+                        this.parentElement.classList.add('bg-primary/20', 'border-primary');
+                    }
+                });
+            });
+            
+            // 监听音频播放完成 - 启用答题按钮
+            audio.element.onended = function() {
+                experimentState.audioPlayed = true;
+                enableRadioButtons('practice');
+            };
+        }
+        
+        // 初始化正式实验试次
+        function initFormalTrial(trialIndex) {
+            // 从1开始计数（显示给用户的顺序）
+            const displayIndex = trialIndex + 1;
+            // 获取随机顺序中的原始索引
+            const originalIndex = experimentState.materials.formalOrder[trialIndex];
+            const trial = experimentState.materials.formal[originalIndex];
+            if (!trial) return;
+            
+            // 更新试次编号和进度
+            document.getElementById('formal-trial-number').textContent = `${displayIndex}`;
+            document.getElementById('formal-progress').textContent = 
+                `进度：${displayIndex}/${experimentState.materials.formal.length}`;
+            
+            // 更新音频
+            const audio = audioElements.formal;
+            audio.element.src = trial.audio;
+            audio.progressFill.style.width = '0%';
+            audio.currentTime.textContent = '0:00';
+            audio.duration.textContent = '0:00';
+            audio.playPauseBtn.innerHTML = '<i class="fa fa-play text-2xl"></i>';
+            audio.isPlaying = false;
+            
+            experimentState.audioPlayed = false;
+            document.getElementById('formal-audio-warning').classList.remove('hidden');
+            
+            // 更新问题
+            for (let i = 1; i <= 5; i++) {
+                document.querySelector(`#formal-questions .question[data-question="${i}"] .question-text`).textContent = trial[`q${i}`];
+            }
+            
+            // 为问题2添加情境
+            document.getElementById('fq2-context').textContent = trial.context;
+            
+            // 重置问题答案和禁用状态
+            document.querySelectorAll('#formal-questions input[type="radio"]').forEach(radio => {
+                radio.checked = false;
+                radio.disabled = true; // 初始禁用
+                const parentDiv = radio.parentElement.querySelector('div');
+                if (parentDiv) parentDiv.classList.remove('bg-primary/20', 'border-primary');
+                else radio.parentElement.classList.remove('bg-primary/20', 'border-primary');
+            });
+            
+            // 重置标签样式
+            document.querySelectorAll('#formal-questions label').forEach(label => {
+                label.classList.remove('radio-enabled');
+                label.classList.add('radio-disabled');
+            });
+            
+            // 显示/隐藏上一个按钮
+            document.getElementById('formal-prev').classList.toggle('hidden', trialIndex === 0);
+            
+            // 为单选按钮添加样式处理
+            document.querySelectorAll('#formal-questions input[type="radio"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    // 清除同组其他选项的样式
+                    document.querySelectorAll(`input[name="${this.name}"]`).forEach(r => {
+                        const parentDiv = r.parentElement.querySelector('div');
+                        if (parentDiv) {
+                            parentDiv.classList.remove('bg-primary/20', 'border-primary');
+                        } else {
+                            r.parentElement.classList.remove('bg-primary/20', 'border-primary');
+                        }
+                    });
+                    
+                    // 设置当前选项的样式
+                    const parentDiv = this.parentElement.querySelector('div');
+                    if (parentDiv) {
+                        parentDiv.classList.add('bg-primary/20', 'border-primary');
+                    } else {
+                        this.parentElement.classList.add('bg-primary/20', 'border-primary');
+                    }
+                });
+            });
+            
+            // 监听音频播放完成 - 启用答题按钮
+            audio.element.onended = function() {
+                experimentState.audioPlayed = true;
+                enableRadioButtons('formal');
+            };
+        }
+        
+        // 保存当前试次的结果
+        function saveCurrentTrialResults(phase, trialIndex) {
+            let trial, originalIndex, actualIndex;
+            
+            if (phase === 'practice') {
+                // 练习试次索引从0开始
+                trial = experimentState.materials.practice[trialIndex];
+                originalIndex = trialIndex; // 原始材料中的索引（0-based）
+                actualIndex = trialIndex + 1; // 实际出现顺序（1-based）
+            } else {
+                // 正式实验：获取随机顺序中的原始索引
+                originalIndex = experimentState.materials.formalOrder[trialIndex];
+                trial = experimentState.materials.formal[originalIndex];
+                actualIndex = trialIndex + 1; // 实际出现顺序（1-based）
+            }
+            
+            if (!trial) return;
+            
+            // 收集答案
+            const answers = {};
+            const prefix = phase === 'practice' ? '' : 'f';
+            
+            for (let i = 1; i <= 5; i++) {
+                const selected = document.querySelector(`input[name="${prefix}q${i}"]:checked`);
+                answers[`q${i}_answer`] = selected ? selected.value : '';
+            }
+            
+            // 创建结果对象
+            const result = {
+                participant_name: experimentState.participant.name,
+                participant_id: experimentState.participant.id,
+                trial_number: trialIndex + 1, // 该阶段内的试次编号（1-based）
+                actual_trial_index: actualIndex, // 实际出现的顺序（随机后）
+                original_trial_index: originalIndex + 1, // 原始材料中的位置（1-based）
+                phase: phase,
+                audio: trial.audio,
+                context: trial.context,
+                q1: trial.q1,
+                q2: trial.q2,
+                q3: trial.q3,
+                q4: trial.q4,
+                q5: trial.q5,
+                ...answers,
+                timestamp: new Date().toISOString()
+            };
+            
+            // 保存结果（如果是当前试次的结果已存在则更新，否则添加）
+            const existingIndex = experimentState.results.findIndex(
+                r => r.phase === phase && r.trial_number === (trialIndex + 1)
+            );
+            
+            if (existingIndex >= 0) {
+                experimentState.results[existingIndex] = result;
+            } else {
+                experimentState.results.push(result);
+            }
+            
+            // 保存状态
+            saveState();
+        }
+        
+        // 检查当前试次的答案是否完整
+        function checkAnswersComplete(phase) {
+            const prefix = phase === 'practice' ? '' : 'f';
+            
+            for (let i = 1; i <= 5; i++) {
+                const selected = document.querySelector(`input[name="${prefix}q${i}"]:checked`);
+                if (!selected) {
+                    alert(`请回答第 ${i} 个问题`);
+                    return false;
+                }
+            }
+            
+            return true;
+        }
+        
+        // 生成并下载CSV数据
+        function downloadResults() {
+            // 准备CSV头部（增加了original_trial_index字段）
+            const headers = [
+                'participant_name', 'participant_id', 'trial_number', 
+                'actual_trial_index', 'original_trial_index', 'phase', 
+                'audio', 'context',
+                'q1', 'q1_answer',
+                'q2', 'q2_answer',
+                'q3', 'q3_answer',
+                'q4', 'q4_answer',
+                'q5', 'q5_answer',
+                'timestamp'
+            ];
+            
+            // 准备CSV内容
+            let csvContent = headers.join(',') + '\n';
+            
+            // 添加结果数据
+            experimentState.results.forEach(result => {
+                const row = headers.map(header => {
+                    const value = result[header] || '';
+                    // 处理包含逗号或引号的值
+                    if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+                        return `"${value.replace(/"/g, '""')}"`;
+                    }
+                    return value;
+                });
+                csvContent += row.join(',') + '\n';
+            });
+            
+            // 创建下载链接
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `results_${experimentState.participant.id}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // 初始化实验（设置试次顺序）
+        function initializeExperiment() {
+            if (experimentState.initialized) return;
+            
+            // 初始化正式实验的试次顺序
+            initializeFormalOrder();
+            
+            experimentState.initialized = true;
+            saveState();
+        }
+        
+        // 事件监听器设置
+        function setupEventListeners() {
+            // 设置音频控制
+            setupAudioControls('practice');
+            setupAudioControls('formal');
+            
+            // 被试信息表单提交
+            document.getElementById('participant-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const name = document.getElementById('name').value.trim();
+                const id = document.getElementById('id').value.trim();
+                
+                if (!name || !id) {
+                    alert('请输入姓名和编号');
+                    return;
+                }
+                
+                // 检查材料是否已加载
+                if (!experimentState.loaded) {
+                    alert('实验材料尚未加载完成，请稍候重试');
+                    return;
+                }
+                
+                // 保存被试信息
+                experimentState.participant.name = name;
+                experimentState.participant.id = id;
+                
+                // 尝试加载已保存的状态
+                const hasSavedState = loadState(id);
+                
+                // 如果是新实验或没有保存的试次顺序，则初始化
+                if (!hasSavedState || experimentState.materials.formalOrder.length === 0) {
+                    initializeExperiment();
+                }
+                
+                // 显示指导语页面
+                showPage('instructions');
+                
+                // 如果有保存的状态，更新按钮文本
+                if (hasSavedState) {
+                    if (experimentState.currentPhase === 'formal' && 
+                        experimentState.currentTrial < experimentState.materials.formal.length) {
+                        document.getElementById('start-practice').textContent = '继续实验';
+                    }
+                }
+            });
+            
+            // 返回欢迎页面
+            document.getElementById('back-to-welcome').addEventListener('click', function() {
+                showPage('welcome');
+            });
+            
+            // 开始练习
+            document.getElementById('start-practice').addEventListener('click', function() {
+                if (!experimentState.loaded) {
+                    alert('实验材料尚未加载完成，请稍候');
+                    return;
+                }
+                
+                // 确保实验已初始化
+                initializeExperiment();
+                
+                // 检查是否有保存的状态
+                if (experimentState.currentPhase === 'formal' && 
+                    experimentState.currentTrial < experimentState.materials.formal.length) {
+                    // 继续正式实验
+                    experimentState.currentPhase = 'formal';
+                    showPage('formal-trial');
+                    initFormalTrial(experimentState.currentTrial);
+                    // 滚动到顶部
+                    window.scrollTo({top: 0, behavior: 'smooth'});
+                } else {
+                    // 开始练习
+                    experimentState.currentPhase = 'practice';
+                    experimentState.currentTrial = 0;
+                    showPage('practice-trial');
+                    initPracticeTrial(0);
+                    // 滚动到顶部
+                    window.scrollTo({top: 0, behavior: 'smooth'});
+                }
+            });
+            
+            // 练习试次：下一个
+            document.getElementById('practice-next').addEventListener('click', function() {
+                // 检查音频是否已播放
+                if (!experimentState.audioPlayed) {
+                    document.getElementById('practice-audio-warning').classList.remove('hidden');
+                    return;
+                }
+                
+                // 检查答案是否完整
+                if (!checkAnswersComplete('practice')) {
+                    return;
+                }
+                
+                // 保存当前试次结果
+                saveCurrentTrialResults('practice', experimentState.currentTrial);
+                
+                // 进入下一个试次或练习完成
+                const nextTrial = experimentState.currentTrial + 1;
+                if (nextTrial < experimentState.materials.practice.length) {
+                    experimentState.currentTrial = nextTrial;
+                    initPracticeTrial(nextTrial);
+                    // 滚动到顶部
+                    window.scrollTo({top: 0, behavior: 'smooth'});
+                } else {
+                    // 练习完成
+                    showPage('practice-complete');
+                    // 滚动到顶部
+                    window.scrollTo({top: 0, behavior: 'smooth'});
+                }
+            });
+            
+            // 练习试次：上一个
+            document.getElementById('practice-prev').addEventListener('click', function() {
+                // 保存当前试次结果
+                saveCurrentTrialResults('practice', experimentState.currentTrial);
+                
+                // 进入上一个试次
+                const prevTrial = experimentState.currentTrial - 1;
+                if (prevTrial >= 0) {
+                    experimentState.currentTrial = prevTrial;
+                    initPracticeTrial(prevTrial);
+                    // 滚动到顶部
+                    window.scrollTo({top: 0, behavior: 'smooth'});
+                }
+            });
+            
+            // 重新练习
+            document.getElementById('retry-practice').addEventListener('click', function() {
+                // 清除练习结果
+                experimentState.results = experimentState.results.filter(r => r.phase !== 'practice');
+                experimentState.currentTrial = 0;
+                showPage('practice-trial');
+                initPracticeTrial(0);
+                // 滚动到顶部
+                window.scrollTo({top: 0, behavior: 'smooth'});
+            });
+            
+            // 开始正式实验
+            document.getElementById('start-formal').addEventListener('click', function() {
+                experimentState.currentPhase = 'formal';
+                experimentState.currentTrial = 0;
+                showPage('formal-trial');
+                initFormalTrial(0);
+                // 滚动到顶部
+                window.scrollTo({top: 0, behavior: 'smooth'});
+            });
+            
+            // 正式实验试次：下一个
+            document.getElementById('formal-next').addEventListener('click', function() {
+                // 检查音频是否已播放
+                if (!experimentState.audioPlayed) {
+                    document.getElementById('formal-audio-warning').classList.remove('hidden');
+                    return;
+                }
+                
+                // 检查答案是否完整
+                if (!checkAnswersComplete('formal')) {
+                    return;
+                }
+                
+                // 保存当前试次结果
+                saveCurrentTrialResults('formal', experimentState.currentTrial);
+                
+                // 进入下一个试次或实验完成
+                const nextTrial = experimentState.currentTrial + 1;
+                if (nextTrial < experimentState.materials.formal.length) {
+                    experimentState.currentTrial = nextTrial;
+                    initFormalTrial(nextTrial);
+                    // 滚动到顶部
+                    window.scrollTo({top: 0, behavior: 'smooth'});
+                } else {
+                    // 实验完成
+                    showPage('complete');
+                    // 滚动到顶部
+                    window.scrollTo({top: 0, behavior: 'smooth'});
+                }
+            });
+            
+            // 正式实验试次：上一个
+            document.getElementById('formal-prev').addEventListener('click', function() {
+                // 保存当前试次结果
+                saveCurrentTrialResults('formal', experimentState.currentTrial);
+                
+                // 进入上一个试次
+                const prevTrial = experimentState.currentTrial - 1;
+                if (prevTrial >= 0) {
+                    experimentState.currentTrial = prevTrial;
+                    initFormalTrial(prevTrial);
+                    // 滚动到顶部
+                    window.scrollTo({top: 0, behavior: 'smooth'});
+                }
+            });
+            
+            // 下载实验数据
+            document.getElementById('download-data').addEventListener('click', downloadResults);
+        }
+        
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 设置错误处理器
+            setupErrorHandlers();
+            
+            // 加载实验材料
+            loadMaterials().then(() => {
+                // 检查是否有未完成的实验
+                const savedParticipantId = localStorage.getItem('lastParticipantId');
+                if (savedParticipantId) {
+                    const savedState = localStorage.getItem(`experimentState_${savedParticipantId}`);
+                    if (savedState) {
+                        const parsedState = JSON.parse(savedState);
+                        // 填充表单
+                        document.getElementById('name').value = parsedState.participant.name || '';
+                        document.getElementById('id').value = parsedState.participant.id || '';
+                        // 显示继续提示
+                        document.getElementById('resume-notice').classList.remove('hidden');
+                    }
+                }
+                
+                // 设置事件监听器
+                setupEventListeners();
+            });
+            
+            // 监听页面关闭事件，保存当前状态
+            window.addEventListener('beforeunload', function() {
+                if (experimentState.participant.id) {
+                    saveState();
+                    localStorage.setItem('lastParticipantId', experimentState.participant.id);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
