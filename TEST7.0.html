@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>音频前测实验</title>
+  <link rel="icon" href="data:,">
+  <!-- jsPsych v7 -->
+  <script src="https://unpkg.com/jspsych@7.3.3"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-survey-multi-choice"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-survey-html-form"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-instructions"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-button-response"></script>
+  <link href="https://unpkg.com/jspsych@7.3.3/css/jspsych.css" rel="stylesheet" />
+  <!-- PapaParse -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    body { font-family: "微软雅黑", "Arial", sans-serif; }
+    .jspsych-btn { margin: 5px; padding: 8px 16px; cursor: pointer; }
+    .instructions { line-height: 1.6; margin-bottom: 20px; }
+    fieldset { border: none; margin: 10px 0; }
+    legend { font-weight: bold; margin-bottom: 5px; }
+    input[type=radio][disabled] { cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <!-- ====== 被试输入界面 ====== -->
+  <div id="intro">
+    <h2>实验登录</h2>
+    <p>请输入您的姓名和编号后开始：</p>
+    姓名: <input id="participantName" type="text" required><br><br>
+    编号: <input id="participantId" type="text" required><br><br>
+    <button onclick="startExperiment()">进入实验</button>
+  </div>
+
+  <div id="jspsych-target" style="display:none;"></div>
+
+<script>
+let participantId = null;
+let participantName = null;
+
+const jsPsych = initJsPsych({
+  display_element: "jspsych-target",
+  on_finish: function() {
+    // 标记完成
+    localStorage.setItem("exp_done_" + participantId, "true");
+
+    // 保存 CSV
+    const data = jsPsych.data.get();
+    data.addProperties({
+      participant_id: participantId,
+      participant_name: participantName,
+      experiment_start: new Date(jsPsych.data.get().values()[0]?.time_start || Date.now()).toISOString(),
+      experiment_end: new Date().toISOString(),
+      duration_seconds: (jsPsych.getTotalTime() / 1000).toFixed(2)
+    });
+    data.localSave('csv', `results_${participantId}.csv`);
+  }
+});
+
+// ========== 被试信息表单 ==========
+let info_form = {
+  type: jsPsychSurveyHtmlForm,
+  preamble: "<h2>确认信息</h2><p>以下为您填写的信息：</p>",
+  html: `
+    <p><b>姓名:</b> ${participantName}</p>
+    <p><b>编号:</b> ${participantId}</p>
+  `,
+  button_label: "确认并继续"
+};
+
+// ========== 指导语 ==========
+let instructions = {
+  type: jsPsychInstructions,
+  pages: [
+    `<div class="instructions">
+      <h2>指导语</h2>
+      <p>您将听到一系列音频。</p>
+      <p>每次答题时，您需要先完整听完音频，之后才可以作答。</p>
+      <p>如果需要，可以再次点击播放按钮重复收听音频。</p>
+      <p>请根据您的真实感受作答，答案没有对错之分。</p>
+    </div>`
+  ],
+  show_clickable_nav: true,
+  button_label_next: "开始练习",
+  button_label_previous: "重新阅读"
+};
+
+// ========== 加载材料 ==========
+async function loadMaterials(){
+  try {
+    let response = await fetch("https://gigibon.github.io/Warn_name_audio/materials.csv");
+    if(!response.ok) throw new Error(`HTTP错误: ${response.status}`);
+    let text = await response.text();
+    let parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+    if(parsed.errors.length > 0){
+      console.error("CSV 解析错误:", parsed.errors);
+      throw new Error("CSV 格式错误，请检查文件");
+    }
+    let data = parsed.data;
+    const requiredFields = ['audio','type','q1','q2','q3','q4','q5'];
+    data.forEach((row,i) => {
+      requiredFields.forEach(f=>{
+        if(!row[f]) throw new Error(`CSV 数据不完整，第 ${i+2} 行缺少 ${f} 字段`);
+      });
+    });
+    let completed = JSON.parse(localStorage.getItem("completedTrials")||"[]");
+    const remaining = data.filter(r => !completed.includes(r.audio));
+    return remaining;
+  } catch (error) {
+    console.error("材料加载错误:", error);
+    jsPsych.run([{ 
+      type: jsPsychHtmlButtonResponse, 
+      stimulus: `<h2>实验无法启动</h2><p>错误信息: ${error.message}</p>`,
+      choices: ["关闭页面"] 
+    }]);
+    throw error;
+  }
+}
+
+// ========== 生成试次 ==========
+function createTrial(row){
+  return {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `
+      <p>请播放并完整听完音频，然后回答以下问题：</p>
+      <audio id="trial-audio" src="${row.audio}" controls></audio>
+      <form id="survey-form">
+        <fieldset>
+          <legend>${row.q1}</legend>
+          <label><input type="radio" name="Q1" value="陈述语气" disabled> 陈述语气</label>
+          <label><input type="radio" name="Q1" value="警告语气" disabled> 警告语气</label>
+        </fieldset>
+        <fieldset>
+          <legend>${row.q2}</legend>
+          <div style="display:flex; justify-content:space-between;">
+            <span>1=非常不适合</span><span>7=非常适合</span>
+          </div>
+          ${[1,2,3,4,5,6,7].map(v=>`<label><input type="radio" name="Q2" value="${v}" disabled> ${v}</label>`).join(' ')}
+        </fieldset>
+        <fieldset>
+          <legend>${row.q3}</legend>
+          <div style="display:flex; justify-content:space-between;">
+            <span>1=非常不愉快</span><span>7=非常愉快</span>
+          </div>
+          ${[1,2,3,4,5,6,7].map(v=>`<label><input type="radio" name="Q3" value="${v}" disabled> ${v}</label>`).join(' ')}
+        </fieldset>
+        <fieldset>
+          <legend>${row.q4}</legend>
+          <div style="display:flex; justify-content:space-between;">
+            <span>1=非常平静</span><span>7=非常激动</span>
+          </div>
+          ${[1,2,3,4,5,6,7].map(v=>`<label><input type="radio" name="Q4" value="${v}" disabled> ${v}</label>`).join(' ')}
+        </fieldset>
+        <fieldset>
+          <legend>${row.q5}</legend>
+          <div style="display:flex; justify-content:space-between;">
+            <span>1=完全没有掌控感</span><span>7=非常有掌控感</span>
+          </div>
+          ${[1,2,3,4,5,6,7].map(v=>`<label><input type="radio" name="Q5" value="${v}" disabled> ${v}</label>`).join(' ')}
+        </fieldset>
+      </form>
+    `,
+    choices: ["提交答案"],
+    on_load: function(){
+      const audioEl = document.getElementById("trial-audio");
+      const btns = document.querySelectorAll("input[type=radio]");
+      const submitBtn = document.querySelector(".jspsych-btn");
+      submitBtn.disabled = true;
+      audioEl.addEventListener("ended", () => {
+        btns.forEach(b=>b.disabled=false);
+        submitBtn.disabled = false;
+      });
+    },
+    on_finish: function(data){
+      let formData = {};
+      new FormData(document.getElementById("survey-form")).forEach((val,key)=>{formData[key]=val;});
+      data.responses = formData;
+      data.phase = row.type;
+      data.audio_filename = row.audio.split('/').pop();
+      let completed = JSON.parse(localStorage.getItem("completedTrials")||"[]");
+      if(!completed.includes(row.audio)){
+        completed.push(row.audio);
+        localStorage.setItem("completedTrials", JSON.stringify(completed));
+      }
+    }
+  };
+}
+
+// ========== 练习部分 ==========
+function createPracticeTimeline(materials){
+  let practice = materials.filter(m=>m.type==="practice");
+  let tl = [];
+  practice.forEach(r=>tl.push(createTrial(r)));
+  if(practice.length>0){
+    tl.push({
+      type: jsPsychHtmlButtonResponse,
+      stimulus: "<p>练习结束。请选择操作：</p>",
+      choices: ["重新练习","进入正式实验"],
+      on_finish: function(d){
+        if(d.response==0){
+          let completed = JSON.parse(localStorage.getItem("completedTrials")||"[]");
+          completed = completed.filter(item=>!practice.some(p=>p.audio===item));
+          localStorage.setItem("completedTrials", JSON.stringify(completed));
+          jsPsych.addNodeToEndOfTimeline(createPracticeTimeline(materials));
+        }
+      }
+    });
+  }
+  return tl;
+}
+
+// ========== 正式部分 ==========
+function createFormalTimeline(materials){
+  let formal = materials.filter(m=>m.type==="formal");
+  let tl = [];
+  jsPsych.randomization.shuffle(formal).forEach(r=>tl.push(createTrial(r)));
+  tl.push({
+    type: jsPsychHtmlButtonResponse,
+    stimulus: "<h2>实验结束！</h2><p>感谢您的参与！</p>",
+    choices: ["完成并关闭"]
+  });
+  return tl;
+}
+
+// ========== 启动实验 ==========
+async function startExperiment(){
+  participantName = document.getElementById("participantName").value.trim();
+  participantId = document.getElementById("participantId").value.trim();
+
+  if(!participantName || !participantId){
+    alert("请输入姓名和编号！");
+    return;
+  }
+  if(localStorage.getItem("exp_done_" + participantId)){
+    alert("该编号已经完成过实验，请更换编号。");
+    return;
+  }
+
+  document.getElementById("intro").style.display = "none";
+  document.getElementById("jspsych-target").style.display = "block";
+
+  let timeline = [info_form, instructions];
+  let materials = await loadMaterials();
+  if(materials.length===0){
+    timeline.push({type: jsPsychHtmlButtonResponse, stimulus:"<p>您已完成所有实验</p>", choices:["关闭"]});
+  } else {
+    timeline = timeline.concat(createPracticeTimeline(materials));
+    timeline = timeline.concat(createFormalTimeline(materials));
+  }
+  jsPsych.run(timeline);
+}
+</script>
+</body>
+</html>
