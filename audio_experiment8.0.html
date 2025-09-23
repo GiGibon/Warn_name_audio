@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音频感知实验</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    
+    <!-- Tailwind 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#10B981',
+                        accent: '#6366F1',
+                        neutral: '#64748B',
+                        dark: '#1E293B',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .transition-all-300 {
+                transition: all 300ms ease-in-out;
+            }
+            .scale-hover {
+                @apply hover:scale-105 transition-all duration-300;
+            }
+            .card-shadow {
+                box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            }
+            .radio-disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+            .radio-enabled {
+                opacity: 1;
+                cursor: pointer;
+            }
+            .audio-progress {
+                height: 4px;
+                background-color: #e5e7eb;
+                border-radius: 2px;
+                cursor: pointer;
+                transition: height 0.2s;
+            }
+            .audio-progress:hover {
+                height: 6px;
+            }
+            .audio-progress-fill {
+                height: 100%;
+                background-color: #3B82F6;
+                border-radius: 2px;
+                width: 0%;
+            }
+            .audio-time {
+                font-size: 0.875rem;
+                color: #64748B;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans text-dark min-h-screen">
+    <!-- 错误提示容器 -->
+    <div id="error-container" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-2xl hidden">
+        <div class="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg shadow-md">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <i class="fa fa-exclamation-circle text-red-500"></i>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm text-red-700 error-message"></p>
+                    <div class="mt-2">
+                        <button id="retry-load" class="text-xs bg-red-100 text-red-800 px-3 py-1 rounded hover:bg-red-200 transition-colors">
+                            重试
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <!-- 欢迎页面 -->
+        <div id="welcome-page" class="page active">
+            <div class="bg-white rounded-xl p-8 card-shadow">
+                <h1 class="text-[clamp(1.8rem,5vw,2.5rem)] font-bold text-center text-primary mb-6">音频感知实验</h1>
+                <p class="text-lg text-center mb-8">感谢您参与本次实验，请填写以下信息开始实验</p>
+                
+                <form id="participant-form" class="space-y-6">
+                    <div>
+                        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">姓名</label>
+                        <input type="text" id="name" name="name" required
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-all-300"
+                            placeholder="请输入您的姓名">
+                    </div>
+                    
+                    <div>
+                        <label for="id" class="block text-sm font-medium text-gray-700 mb-1">编号</label>
+                        <input type="text" id="id" name="id" required
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-all-300"
+                            placeholder="请输入您的编号">
+                    </div>
+                    
+                    <div class="pt-4">
+                        <button type="submit" id="start-btn"
+                            class="w-full bg-primary hover:bg-primary/90 text-white font-medium py-3 px-6 rounded-lg transition-all-300 flex items-center justify-center">
+                            <span>开始实验</span>
+                            <i class="fa fa-arrow-right ml-2"></i>
+                        </button>
+                    </div>
+                </form>
+                
+                <div id="resume-notice" class="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg hidden">
+                    <p class="text-yellow-800 text-sm flex items-center">
+                        <i class="fa fa-info-circle mr-2"></i>
+                        <span>检测到您有未完成的实验，点击开始按钮可继续</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 指导语页面 -->
+        <div id="instructions-page" class="page hidden">
+            <div class="bg-white rounded-xl p-8 card-shadow">
+                <h1 class="text-2xl font-bold text-center text-primary mb-6">实验指导语</h1>
+                
+                <div class="space-y-4 mb-8 text-gray-700 leading-relaxed">
+                    <p>欢迎参加本次音频感知实验，在实验过程中，请您仔细聆听音频并根据听到的内容回答相关问题。</p>
+                    
+                    <p>实验将分为两个部分：</p>
+                    <ol class="list-decimal pl-6 mb-2">
+                        <li>实验一：包含多个试次，每个试次需要回答4个问题</li>
+                        <li>实验二：包含多个试次，每个试次需要回答1个问题</li>
+                    </ol>
+                    
+                    <p>每个试次的操作流程：</p>
+                    <ol class="list-decimal pl-6 mb-2">
+                        <li>聆听音频（您可以重复收听）</li>
+                        <li>听完音频后，回答页面上的问题</li>
+                        <li>完成所有问题后，点击"下一个"按钮进入下一个试次</li>
+                    </ol>
+                    
+                    <p>请注意：</p>
+                    <ul class="list-disc pl-6">
+                        <li>请在安静的环境中完成实验</li>
+                        <li>请务必听完音频后再进行作答（未听完时答题按钮将处于禁用状态）</li>
+                        <li>回答没有对错之分，请根据您的真实感受进行选择</li>
+                        <li>实验过程中请勿刷新页面，以免数据丢失</li>
+                        <li><strong>试次一旦提交无法返回修改，请仔细作答</strong></li>
+                    </ul>
+                </div>
+                
+                <div class="flex justify-end pt-4">
+                    <button id="start-experiment"
+                        class="px-6 py-2 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg transition-all-300">
+                        开始实验一
+                        <i class="fa fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 实验一试次页面 -->
+        <div id="experiment1-page" class="page hidden">
+            <div class="bg-white rounded-xl p-8 card-shadow">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-primary">实验一 试次 <span id="exp1-trial-number"></span></h2>
+                    <div class="text-sm text-gray-500" id="exp1-progress"></div>
+                </div>
+                
+                <!-- 音频播放区域 -->
+                <div class="mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
+                    <h3 class="font-medium mb-4">请聆听以下音频：</h3>
+                    
+                    <!-- 自定义音频播放器 -->
+                    <div class="audio-player w-full">
+                        <div class="flex items-center mb-3">
+                            <button id="exp1-play-pause" class="text-primary hover:text-primary/80 scale-hover mr-4">
+                                <i class="fa fa-play text-2xl"></i>
+                            </button>
+                            <div class="flex-1">
+                                <div class="audio-progress" id="exp1-progress-bar">
+                                    <div class="audio-progress-fill" id="exp1-progress-fill"></div>
+                                </div>
+                                <div class="flex justify-between mt-2">
+                                    <span class="audio-time" id="exp1-current-time">0:00</span>
+                                    <span class="audio-time" id="exp1-duration">0:00</span>
+                                </div>
+                            </div>
+                            <button id="exp1-replay" class="ml-4 text-primary hover:text-primary/80 scale-hover">
+                                <i class="fa fa-refresh text-xl"></i>
+                            </button>
+                        </div>
+                        <!-- 隐藏原生音频元素 -->
+                        <audio id="exp1-audio" preload="none" class="hidden">
+                            您的浏览器不支持音频播放
+                        </audio>
+                    </div>
+                    
+                    <p id="exp1-audio-warning" class="text-amber-500 text-sm mt-2">
+                        <i class="fa fa-info-circle mr-1"></i>请先完整听完音频后才能开始答题
+                    </p>
+                </div>
+                
+                <!-- 问题区域 -->
+                <div id="exp1-questions" class="space-y-8 mb-8">
+                    <!-- 问题1 -->
+                    <div class="question" data-question="1">
+                        <h3 class="font-medium text-lg mb-3">1. <span class="question-text"></span></h3>
+                        <div class="flex flex-wrap gap-4">
+                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-all-300 radio-disabled">
+                                <input type="radio" name="eq1" value="选项1" class="mr-2" disabled>
+                                <span>陈述语气</span>
+                            </label>
+                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-all-300 radio-disabled">
+                                <input type="radio" name="eq1" value="选项2" class="mr-2" disabled>
+                                <span>警告语气</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- 问题2 -->
+                    <div class="question" data-question="2">
+                        <h3 class="font-medium text-lg mb-3">2. <span class="question-text"></span></h3>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500">非常不愉快</span>
+                            <div class="flex gap-1">
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2" value="1" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">1</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2" value="2" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">2</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2" value="3" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">3</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2" value="4" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">4</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2" value="5" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">5</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2" value="6" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">6</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2" value="7" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">7</div>
+                                </label>
+                            </div>
+                            <span class="text-sm text-gray-500">非常愉快</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 问题3 -->
+                    <div class="question" data-question="3">
+                        <h3 class="font-medium text-lg mb-3">3. <span class="question-text"></span></h3>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500">非常平静</span>
+                            <div class="flex gap-1">
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq3" value="1" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">1</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq3" value="2" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">2</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq3" value="3" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">3</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq3" value="4" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">4</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq3" value="5" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">5</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq3" value="6" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">6</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq3" value="7" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">7</div>
+                                </label>
+                            </div>
+                            <span class="text-sm text-gray-500">非常激动</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 问题4 -->
+                    <div class="question" data-question="4">
+                        <h3 class="font-medium text-lg mb-3">4. <span class="question-text"></span></h3>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500">非常没有掌控感</span>
+                            <div class="flex gap-1">
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq4" value="1" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">1</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq4" value="2" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">2</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq4" value="3" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">3</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq4" value="4" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">4</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq4" value="5" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">5</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq4" value="6" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">6</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq4" value="7" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">7</div>
+                                </label>
+                            </div>
+                            <span class="text-sm text-gray-500">非常有掌控感</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end pt-4 border-t border-gray-100">
+                    <button id="exp1-next" class="px-6 py-2 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg transition-all-300">
+                        下一个
+                        <i class="fa fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 实验一完成页面 -->
+        <div id="exp1-complete-page" class="page hidden">
+            <div class="bg-white rounded-xl p-8 card-shadow text-center">
+                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <i class="fa fa-check text-2xl text-green-500"></i>
+                </div>
+                
+                <h2 class="text-2xl font-bold text-primary mb-4">实验一完成</h2>
+                <p class="text-gray-600 mb-8 max-w-lg mx-auto">
+                    您已完成实验一的所有试次。休息片刻后，请点击下方按钮开始实验二。
+                </p>
+                
+                <div class="flex justify-center">
+                    <button id="start-experiment2"
+                        class="px-6 py-3 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg transition-all-300">
+                        开始实验二
+                        <i class="fa fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 实验二试次页面 -->
+        <div id="experiment2-page" class="page hidden">
+            <div class="bg-white rounded-xl p-8 card-shadow">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-primary">实验二 试次 <span id="exp2-trial-number"></span></h2>
+                    <div class="text-sm text-gray-500" id="exp2-progress"></div>
+                </div>
+                
+                <!-- 音频播放区域 -->
+                <div class="mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
+                    <h3 class="font-medium mb-4">请聆听以下音频：</h3>
+                    
+                    <!-- 自定义音频播放器 -->
+                    <div class="audio-player w-full">
+                        <div class="flex items-center mb-3">
+                            <button id="exp2-play-pause" class="text-primary hover:text-primary/80 scale-hover mr-4">
+                                <i class="fa fa-play text-2xl"></i>
+                            </button>
+                            <div class="flex-1">
+                                <div class="audio-progress" id="exp2-progress-bar">
+                                    <div class="audio-progress-fill" id="exp2-progress-fill"></div>
+                                </div>
+                                <div class="flex justify-between mt-2">
+                                    <span class="audio-time" id="exp2-current-time">0:00</span>
+                                    <span class="audio-time" id="exp2-duration">0:00</span>
+                                </div>
+                            </div>
+                            <button id="exp2-replay" class="ml-4 text-primary hover:text-primary/80 scale-hover">
+                                <i class="fa fa-refresh text-xl"></i>
+                            </button>
+                        </div>
+                        <!-- 隐藏原生音频元素 -->
+                        <audio id="exp2-audio" preload="none" class="hidden">
+                            您的浏览器不支持音频播放
+                        </audio>
+                    </div>
+                    
+                    <p id="exp2-audio-warning" class="text-amber-500 text-sm mt-2">
+                        <i class="fa fa-info-circle mr-1"></i>请先完整听完音频后才能开始答题
+                    </p>
+                </div>
+                
+                <!-- 问题区域 -->
+                <div id="exp2-questions" class="space-y-8 mb-8">
+                    <!-- 问题1 -->
+                    <div class="question" data-question="1">
+                        <h3 class="font-medium text-lg mb-3">1. <span class="question-text"></span></h3>
+                        <div class="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                            <p class="text-gray-600 text-sm"><strong>情境：</strong><span id="eq2-context"></span></p>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500">非常不符合</span>
+                            <div class="flex gap-1">
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2_1" value="1" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">1</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2_1" value="2" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">2</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2_1" value="3" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">3</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2_1" value="4" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">4</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2_1" value="5" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">5</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2_1" value="6" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">6</div>
+                                </label>
+                                <label class="flex flex-col items-center cursor-pointer radio-disabled">
+                                    <input type="radio" name="eq2_1" value="7" class="hidden" disabled>
+                                    <div class="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center hover:border-primary transition-all-300">7</div>
+                                </label>
+                            </div>
+                            <span class="text-sm text-gray-500">非常符合</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end pt-4 border-t border-gray-100">
+                    <button id="exp2-next" class="px-6 py-2 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg transition-all-300">
+                        下一个
+                        <i class="fa fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 实验完成页面 -->
+        <div id="experiment-complete-page" class="page hidden">
+            <div class="bg-white rounded-xl p-8 card-shadow text-center">
+                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <i class="fa fa-trophy text-2xl text-green-500"></i>
+                </div>
+                
+                <h2 class="text-2xl font-bold text-primary mb-4">所有实验完成</h2>
+                <p class="text-gray-600 mb-8 max-w-lg mx-auto">
+                    恭喜您完成了所有实验内容！感谢您的参与和宝贵的时间。您的回答对我们的研究非常重要。
+                </p>
+                
+                <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                    <button id="download-data"
+                        class="px-6 py-3 bg-secondary hover:bg-secondary/90 text-white font-medium rounded-lg transition-all-300">
+                        <i class="fa fa-download mr-2"></i>下载我的数据
+                    </button>
+                    
+                    <button id="restart-experiment"
+                        class="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all-300">
+                        <i class="fa fa-refresh mr-2"></i>重新开始
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 工具函数：直接滚动到页面顶部（无平滑效果）
+        function scrollToTop() {
+            window.scrollTo(0, 0);
+        }
+
+        // 实验数据管理
+        const experimentData = {
+            participant: {
+                name: '',
+                id: ''
+            },
+            baseTrials: [],        // 原始试次数据（未随机）
+            exp1Trials: [],        // 实验一的试次数据（已随机）
+            exp2Trials: [],        // 实验二的试次数据（已随机）
+            currentExp1Index: 0,   // 当前实验一试次索引
+            currentExp2Index: 0,   // 当前实验二试次索引
+            completedExp1: false,  // 实验一是否完成
+            completedExp2: false,  // 实验二是否完成
+            results: {
+                exp1: [],
+                exp2: []
+            },
+            
+            // 获取当前参与者的唯一存储键
+            getStorageKey: function() {
+                if (!this.participant.name || !this.participant.id) {
+                    return null;
+                }
+                // 使用姓名和编号的组合作为唯一键
+                return `audioExperiment_${this.participant.name}_${this.participant.id}`;
+            },
+            
+            // 加载当前参与者的实验数据
+            load: function() {
+                const key = this.getStorageKey();
+                if (!key) return false;
+                
+                const savedData = localStorage.getItem(key);
+                if (savedData) {
+                    const parsed = JSON.parse(savedData);
+                    Object.assign(this, parsed);
+                    return true;
+                }
+                return false;
+            },
+            
+            // 保存当前参与者的实验数据
+            save: function() {
+                const key = this.getStorageKey();
+                if (!key) return false;
+                
+                localStorage.setItem(key, JSON.stringify(this));
+                return true;
+            },
+            
+            // 清除当前参与者的存储数据
+            clear: function() {
+                const key = this.getStorageKey();
+                if (key) {
+                    localStorage.removeItem(key);
+                }
+                
+                this.participant = { name: '', id: '' };
+                this.baseTrials = [];
+                this.exp1Trials = [];
+                this.exp2Trials = [];
+                this.currentExp1Index = 0;
+                this.currentExp2Index = 0;
+                this.completedExp1 = false;
+                this.completedExp2 = false;
+                this.results = { exp1: [], exp2: [] };
+            },
+            
+            // 检查是否存在当前参与者的历史数据
+            hasExistingData: function() {
+                const key = this.getStorageKey();
+                if (!key) return false;
+                
+                return localStorage.getItem(key) !== null;
+            },
+            
+            // 记录实验一结果
+            recordExp1Result: function(trialId, audio, rawId, realOrder, answers, timestamps) {
+                this.results.exp1.push({
+                    trialId,
+                    audio,           // 音频地址
+                    raw_ID: rawId,   // 原始ID
+                    real_order: realOrder,  // 真实试次顺序
+                    answers,
+                    timestamps,
+                    timestamp: new Date().toISOString()
+                });
+                this.save();
+            },
+            
+            // 记录实验二结果
+            recordExp2Result: function(trialId, audio, rawId, realOrder, answers, timestamps) {
+                this.results.exp2.push({
+                    trialId,
+                    audio,           // 音频地址
+                    raw_ID: rawId,   // 原始ID
+                    real_order: realOrder,  // 真实试次顺序
+                    answers,
+                    timestamps,
+                    timestamp: new Date().toISOString()
+                });
+                this.save();
+            },
+            
+            // 初始化试次顺序（仅在首次加载时调用）
+            initializeTrialOrders: function() {
+                // 为实验一和实验二创建不同的随机顺序
+                this.exp1Trials = shuffleArray([...this.baseTrials]);
+                this.exp2Trials = shuffleArray([...this.baseTrials]);
+                this.save();
+            }
+        };
+
+        // 页面管理
+        const pageManager = {
+            pages: document.querySelectorAll('.page'),
+            
+            showPage: function(pageId) {
+                this.pages.forEach(page => {
+                    page.classList.add('hidden');
+                    page.classList.remove('active');
+                });
+                const targetPage = document.getElementById(pageId);
+                targetPage.classList.remove('hidden');
+                targetPage.classList.add('active');
+                
+                // 显示页面后立即滚动到顶部
+                scrollToTop();
+            }
+        };
+
+        // 音频播放器控制
+        class AudioPlayer {
+            constructor(audioId, playPauseBtnId, progressBarId, progressFillId, currentTimeId, durationId, replayBtnId, warningId) {
+                this.audio = document.getElementById(audioId);
+                this.playPauseBtn = document.getElementById(playPauseBtnId);
+                this.progressBar = document.getElementById(progressBarId);
+                this.progressFill = document.getElementById(progressFillId);
+                this.currentTimeDisplay = document.getElementById(currentTimeId);
+                this.durationDisplay = document.getElementById(durationId);
+                this.replayBtn = document.getElementById(replayBtnId);
+                this.warningElement = document.getElementById(warningId);
+                this.isPlaying = false;
+                this.hasCompleted = false;
+                
+                this.initEvents();
+            }
+            
+            initEvents() {
+                // 播放/暂停按钮
+                this.playPauseBtn.addEventListener('click', () => this.togglePlayPause());
+                
+                // 重播按钮
+                this.replayBtn.addEventListener('click', () => this.replay());
+                
+                // 音频进度更新
+                this.audio.addEventListener('timeupdate', () => this.updateProgress());
+                
+                // 音频加载完成
+                this.audio.addEventListener('loadedmetadata', () => this.updateDuration());
+                
+                // 音频播放结束
+                this.audio.addEventListener('ended', () => this.handleEnded());
+                
+                // 进度条点击
+                this.progressBar.addEventListener('click', (e) => this.seek(e));
+            }
+            
+            loadAudio(src) {
+                this.audio.src = src;
+                this.audio.load();
+                this.hasCompleted = false;
+                this.updateProgress();
+                this.updatePlayPauseIcon();
+                this.triggerOnLoad();
+            }
+            
+            togglePlayPause() {
+                if (this.audio.paused) {
+                    this.audio.play().catch(err => {
+                        showError('音频播放失败，请检查浏览器设置');
+                        console.error('Audio play error:', err);
+                    });
+                    this.isPlaying = true;
+                } else {
+                    this.audio.pause();
+                    this.isPlaying = false;
+                }
+                this.updatePlayPauseIcon();
+            }
+            
+            replay() {
+                this.audio.currentTime = 0;
+                this.audio.play().catch(err => {
+                    showError('音频播放失败，请检查浏览器设置');
+                    console.error('Audio play error:', err);
+                });
+                this.isPlaying = true;
+                this.updatePlayPauseIcon();
+                this.hasCompleted = false;
+            }
+            
+            updateProgress() {
+                const percent = (this.audio.currentTime / this.audio.duration) * 100;
+                this.progressFill.style.width = `${percent}%`;
+                this.currentTimeDisplay.textContent = this.formatTime(this.audio.currentTime);
+            }
+            
+            updateDuration() {
+                if (!isNaN(this.audio.duration)) {
+                    this.durationDisplay.textContent = this.formatTime(this.audio.duration);
+                }
+            }
+            
+            handleEnded() {
+                this.isPlaying = false;
+                this.hasCompleted = true;
+                this.updatePlayPauseIcon();
+                this.triggerOnComplete();
+            }
+            
+            seek(e) {
+                const rect = this.progressBar.getBoundingClientRect();
+                const pos = (e.clientX - rect.left) / rect.width;
+                this.audio.currentTime = pos * this.audio.duration;
+            }
+            
+            formatTime(seconds) {
+                const mins = Math.floor(seconds / 60);
+                const secs = Math.floor(seconds % 60);
+                return `${mins}:${secs < 10 ? '0' + secs : secs}`;
+            }
+            
+            updatePlayPauseIcon() {
+                const icon = this.playPauseBtn.querySelector('i');
+                if (this.isPlaying) {
+                    icon.classList.remove('fa-play');
+                    icon.classList.add('fa-pause');
+                } else {
+                    icon.classList.remove('fa-pause');
+                    icon.classList.add('fa-play');
+                }
+            }
+            
+            // 事件回调
+            onComplete(callback) {
+                this.completeCallback = callback;
+            }
+            
+            onLoad(callback) {
+                this.loadCallback = callback;
+            }
+            
+            triggerOnComplete() {
+                if (this.completeCallback) {
+                    this.completeCallback();
+                }
+            }
+            
+            triggerOnLoad() {
+                if (this.loadCallback) {
+                    this.loadCallback();
+                }
+            }
+        }
+
+        // 问题管理器
+        class QuestionManager {
+            constructor(questionsContainerId, radioDisabledClass, radioEnabledClass) {
+                this.container = document.getElementById(questionsContainerId);
+                this.radioDisabledClass = radioDisabledClass;
+                this.radioEnabledClass = radioEnabledClass;
+                this.answerTimestamps = {};
+                this.initEvents();
+            }
+            
+            initEvents() {
+                // 为所有单选按钮添加事件监听
+                const radioInputs = this.container.querySelectorAll('input[type="radio"]');
+                radioInputs.forEach(input => {
+                    input.addEventListener('change', (e) => this.handleAnswer(e));
+                });
+                
+                // 为单选按钮的标签添加点击事件（美化后的按钮）
+                const radioLabels = this.container.querySelectorAll('label:has(input[type="radio"])');
+                radioLabels.forEach(label => {
+                    label.addEventListener('click', (e) => {
+                        const input = label.querySelector('input[type="radio"]');
+                        if (!input.disabled) {
+                            input.checked = true;
+                            input.dispatchEvent(new Event('change'));
+                        }
+                    });
+                });
+            }
+            
+            // 处理答案选择
+            handleAnswer(e) {
+                const input = e.target;
+                const name = input.name;
+                this.answerTimestamps[name] = new Date().toISOString();
+                
+                // 更新UI显示选中状态
+                const nameSelector = `input[name="${name}"]`;
+                const allInputs = this.container.querySelectorAll(nameSelector);
+                
+                allInputs.forEach(radio => {
+                    const label = radio.closest('label');
+                    const circle = label.querySelector('div');
+                    
+                    if (radio.checked) {
+                        circle.classList.add('bg-primary', 'text-white');
+                        circle.classList.remove('border-gray-300');
+                    } else {
+                        circle.classList.remove('bg-primary', 'text-white');
+                        circle.classList.add('border-gray-300');
+                    }
+                });
+            }
+            
+            // 启用所有问题
+            enableQuestions() {
+                const labels = this.container.querySelectorAll('label');
+                labels.forEach(label => {
+                    label.classList.remove(this.radioDisabledClass);
+                    label.classList.add(this.radioEnabledClass);
+                });
+                
+                const inputs = this.container.querySelectorAll('input[type="radio"]');
+                inputs.forEach(input => {
+                    input.disabled = false;
+                });
+                
+                // 隐藏警告信息
+                const warning = this.container.closest('.page').querySelector('.audio-warning');
+                if (warning) warning.style.display = 'none';
+            }
+            
+            // 禁用所有问题
+            disableQuestions() {
+                const labels = this.container.querySelectorAll('label');
+                labels.forEach(label => {
+                    label.classList.remove(this.radioEnabledClass);
+                    label.classList.add(this.radioDisabledClass);
+                });
+                
+                const inputs = this.container.querySelectorAll('input[type="radio"]');
+                inputs.forEach(input => {
+                    input.disabled = true;
+                });
+            }
+            
+            // 重置所有问题
+            resetQuestions() {
+                const inputs = this.container.querySelectorAll('input[type="radio"]');
+                inputs.forEach(input => {
+                    input.checked = false;
+                    
+                    // 重置样式
+                    const label = input.closest('label');
+                    const circle = label.querySelector('div');
+                    if (circle) {
+                        circle.classList.remove('bg-primary', 'text-white');
+                        circle.classList.add('border-gray-300');
+                    }
+                });
+                
+                this.answerTimestamps = {};
+                this.disableQuestions();
+                
+                // 显示警告信息
+                const warning = this.container.closest('.page').querySelector('.audio-warning');
+                if (warning) warning.style.display = 'block';
+            }
+            
+            // 获取所有答案
+            getAnswers() {
+                const answers = {};
+                const inputs = this.container.querySelectorAll('input[type="radio"]:checked');
+                
+                inputs.forEach(input => {
+                    answers[input.name] = input.value;
+                });
+                
+                return answers;
+            }
+            
+            // 检查是否所有问题都已回答
+            allAnswered() {
+                const questionGroups = new Set();
+                const inputs = this.container.querySelectorAll('input[type="radio"]');
+                
+                inputs.forEach(input => {
+                    questionGroups.add(input.name);
+                });
+                
+                const answeredGroups = new Set();
+                const checkedInputs = this.container.querySelectorAll('input[type="radio"]:checked');
+                
+                checkedInputs.forEach(input => {
+                    answeredGroups.add(input.name);
+                });
+                
+                return questionGroups.size === answeredGroups.size;
+            }
+            
+            // 设置情境文本（针对实验二的问题）
+            setContext(text) {
+                const contextElement = this.container.querySelector('#eq2-context');
+                if (contextElement) {
+                    contextElement.textContent = text;
+                }
+            }
+        }
+
+        // 工具函数
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            const errorMessage = errorContainer.querySelector('.error-message');
+            
+            errorMessage.textContent = message;
+            errorContainer.classList.remove('hidden');
+            
+            // 5秒后自动隐藏
+            setTimeout(() => {
+                errorContainer.classList.add('hidden');
+            }, 5000);
+        }
+
+        function hideError() {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.classList.add('hidden');
+        }
+
+        // 随机打乱数组顺序
+        function shuffleArray(array) {
+            const newArray = [...array];
+            for (let i = newArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+            }
+            return newArray;
+        }
+
+        // 下载数据为CSV
+        function downloadCSV(data, filename) {
+            // 创建CSV内容
+            let csvContent = "data:text/csv;charset=utf-8,";
+            
+            // 添加参与者信息
+            csvContent += `参与者信息\n`;
+            csvContent += `姓名,编号\n`;
+            csvContent += `${data.participant.name},${data.participant.id}\n\n`;
+            
+            // 添加实验一结果
+            csvContent += `实验一结果\n`;
+            if (data.results.exp1.length > 0) {
+                csvContent += `试次ID,音频地址,原始ID,真实试次顺序,问题1,问题2,问题3,问题4,时间戳\n`;
+                data.results.exp1.forEach(result => {
+                    csvContent += `${result.trialId},`;
+                    csvContent += `${result.audio || ''},`;
+                    csvContent += `${result.raw_ID || ''},`;
+                    csvContent += `${result.real_order || ''},`;
+                    csvContent += `${result.answers.eq1 || ''},`;
+                    csvContent += `${result.answers.eq2 || ''},`;
+                    csvContent += `${result.answers.eq3 || ''},`;
+                    csvContent += `${result.answers.eq4 || ''},`;
+                    csvContent += `${result.timestamp}\n`;
+                });
+            } else {
+                csvContent += `无数据\n`;
+            }
+            
+            // 添加实验二结果
+            csvContent += `\n实验二结果\n`;
+            if (data.results.exp2.length > 0) {
+                csvContent += `试次ID,音频地址,原始ID,真实试次顺序,问题1,时间戳\n`;
+                data.results.exp2.forEach(result => {
+                    csvContent += `${result.trialId},`;
+                    csvContent += `${result.audio || ''},`;
+                    csvContent += `${result.raw_ID || ''},`;
+                    csvContent += `${result.real_order || ''},`;
+                    csvContent += `${result.answers.eq2_1 || ''},`;
+                    csvContent += `${result.timestamp}\n`;
+                });
+            } else {
+                csvContent += `无数据\n`;
+            }
+            
+            // 创建下载链接
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", filename);
+            document.body.appendChild(link);
+            
+            // 触发下载
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 初始化实验
+        function initExperiment() {
+            // 初始化音频播放器
+            const exp1AudioPlayer = new AudioPlayer(
+                'exp1-audio', 
+                'exp1-play-pause', 
+                'exp1-progress-bar', 
+                'exp1-progress-fill', 
+                'exp1-current-time', 
+                'exp1-duration', 
+                'exp1-replay',
+                'exp1-audio-warning'
+            );
+            
+            const exp2AudioPlayer = new AudioPlayer(
+                'exp2-audio', 
+                'exp2-play-pause', 
+                'exp2-progress-bar', 
+                'exp2-progress-fill', 
+                'exp2-current-time', 
+                'exp2-duration', 
+                'exp2-replay',
+                'exp2-audio-warning'
+            );
+            
+            // 初始化问题管理器
+            const exp1QuestionManager = new QuestionManager('exp1-questions', 'radio-disabled', 'radio-enabled');
+            const exp2QuestionManager = new QuestionManager('exp2-questions', 'radio-disabled', 'radio-enabled');
+            
+            // 音频播放完成后启用问题
+            exp1AudioPlayer.onComplete(() => {
+                exp1QuestionManager.enableQuestions();
+            });
+            
+            exp2AudioPlayer.onComplete(() => {
+                exp2QuestionManager.enableQuestions();
+            });
+            
+            // 加载实验材料
+            function loadExperimentMaterials() {
+                return new Promise((resolve, reject) => {
+                    // 如果已经有基础试次数据，直接使用
+                    if (experimentData.baseTrials.length > 0) {
+                        resolve();
+                        return;
+                    }
+                    
+                    // 否则从CSV加载
+                    Papa.parse('https://gigibon.github.io/Warn_name_audio/materials.csv', {
+                        download: true,
+                        header: true,
+                        delimiter: ',',
+                        skipEmptyLines: true,
+                        complete: function(results) {
+                            // 处理解析错误
+                            if (results.errors.length > 0) {
+                                let errorMsg = '加载实验材料失败: ';
+                                results.errors.forEach(err => {
+                                    errorMsg += `[行${err.row}] ${err.message}; `;
+                                });
+                                reject(new Error(errorMsg));
+                                return;
+                            }
+                            
+                            // 检查数据是否为空
+                            if (results.data.length === 0) {
+                                reject(new Error('CSV文件中没有数据'));
+                                return;
+                            }
+                            
+                            // 验证表头是否符合格式
+                            const expectedHeaders = ['raw_ID','audio', 'context', 'q1', 'q2', 'q3', 'q4', 'part2_q1'];
+                            const actualHeaders = Object.keys(results.data[0]);
+                            
+                            // 检查是否包含raw_ID字段
+                            if (!actualHeaders.includes('raw_ID')) {
+                                reject(new Error('CSV文件缺少必要的raw_ID字段'));
+                                return;
+                            }
+                            
+                            // 为每个试次创建唯一ID和记录原始顺序
+                            const trialsWithIds = results.data.map((trial, index) => ({
+                                id: `trial_${index + 1}`,
+                                originalIndex: index + 1,
+                                ...trial
+                            }));
+                            
+                            // 保存基础试次数据（未随机）
+                            experimentData.baseTrials = trialsWithIds;
+                            
+                            // 初始化随机顺序（仅首次）
+                            if (experimentData.exp1Trials.length === 0 || experimentData.exp2Trials.length === 0) {
+                                experimentData.initializeTrialOrders();
+                            }
+                            
+                            resolve();
+                        },
+                        error: function(error) {
+                            reject(new Error(`网络或解析错误: ${error.message}`));
+                        }
+                    });
+                });
+            }
+            
+            // 实验一试次加载函数
+            function loadCurrentExp1Trial() {
+                if (experimentData.currentExp1Index >= experimentData.exp1Trials.length) {
+                    experimentData.completedExp1 = true;
+                    experimentData.save();
+                    pageManager.showPage('exp1-complete-page');
+                    return;
+                }
+                
+                const trial = experimentData.exp1Trials[experimentData.currentExp1Index];
+                
+                // 更新试次信息
+                document.getElementById('exp1-trial-number').textContent = experimentData.currentExp1Index + 1;
+                document.getElementById('exp1-progress').textContent = 
+                    `进度: ${experimentData.currentExp1Index + 1}/${experimentData.exp1Trials.length}`;
+                
+                // 加载音频
+                exp1AudioPlayer.loadAudio(trial.audio);
+                
+                // 更新问题文本
+                document.querySelector('.question[data-question="1"] .question-text').textContent = trial.q1;
+                document.querySelector('.question[data-question="2"] .question-text').textContent = trial.q2;
+                document.querySelector('.question[data-question="3"] .question-text').textContent = trial.q3;
+                document.querySelector('.question[data-question="4"] .question-text').textContent = trial.q4;
+                
+                // 重置问题
+                exp1QuestionManager.resetQuestions();
+            }
+            
+            // 实验二试次加载函数
+            function loadCurrentExp2Trial() {
+                if (experimentData.currentExp2Index >= experimentData.exp2Trials.length) {
+                    experimentData.completedExp2 = true;
+                    experimentData.save();
+                    pageManager.showPage('experiment-complete-page');
+                    return;
+                }
+                
+                const trial = experimentData.exp2Trials[experimentData.currentExp2Index];
+                
+                // 更新试次信息
+                document.getElementById('exp2-trial-number').textContent = experimentData.currentExp2Index + 1;
+                document.getElementById('exp2-progress').textContent = 
+                    `进度: ${experimentData.currentExp2Index + 1}/${experimentData.exp2Trials.length}`;
+                
+                // 加载音频
+                exp2AudioPlayer.loadAudio(trial.audio);
+                
+                // 设置情境
+                exp2QuestionManager.setContext(trial.context || '');
+                
+                // 更新问题文本
+                document.querySelector('#exp2-questions .question-text').textContent = trial.part2_q1;
+                
+                // 重置问题
+                exp2QuestionManager.resetQuestions();
+            }
+            
+            // 当姓名或编号输入变化时，检查是否有该参与者的数据
+            function checkForExistingData() {
+                const name = document.getElementById('name').value.trim();
+                const id = document.getElementById('id').value.trim();
+                
+                if (!name || !id) {
+                    document.getElementById('resume-notice').classList.add('hidden');
+                    return;
+                }
+                
+                // 保存当前的参与者信息
+                const currentParticipant = { ...experimentData.participant };
+                experimentData.participant.name = name;
+                experimentData.participant.id = id;
+                
+                // 检查是否有该参与者的历史数据
+                const hasData = experimentData.hasExistingData();
+                document.getElementById('resume-notice').classList.toggle('hidden', !hasData);
+                
+                // 恢复原始的参与者信息
+                experimentData.participant = currentParticipant;
+            }
+            
+            // 为姓名和编号输入框添加变化监听
+            document.getElementById('name').addEventListener('input', checkForExistingData);
+            document.getElementById('id').addEventListener('input', checkForExistingData);
+            
+            // 额外添加试次切换时的滚动触发
+            // 实验一：下一个试次按钮
+            document.getElementById('exp1-next').addEventListener('click', function() {
+                // 先执行原有的验证逻辑...
+                if (!exp1AudioPlayer.hasCompleted) {
+                    showError('请先完整听完音频');
+                    return;
+                }
+                
+                if (!exp1QuestionManager.allAnswered()) {
+                    showError('请回答所有问题');
+                    return;
+                }
+                
+                // 记录当前试次结果
+                const currentTrial = experimentData.exp1Trials[experimentData.currentExp1Index];
+                const answers = exp1QuestionManager.getAnswers();
+                const timestamps = exp1QuestionManager.answerTimestamps;
+                
+                experimentData.recordExp1Result(
+                    currentTrial.id,
+                    currentTrial.audio,
+                    currentTrial.raw_ID,
+                    experimentData.currentExp1Index + 1,
+                    answers,
+                    timestamps
+                );
+                
+                // 进入下一个试次前强制滚动到顶部
+                scrollToTop();
+                
+                // 短暂延迟确保滚动完成后再加载新试次
+                setTimeout(() => {
+                    experimentData.currentExp1Index++;
+                    experimentData.save();
+                    loadCurrentExp1Trial();
+                }, 10);
+            });
+            
+            // 实验二：下一个试次按钮
+            document.getElementById('exp2-next').addEventListener('click', function() {
+                // 先执行原有的验证逻辑...
+                if (!exp2AudioPlayer.hasCompleted) {
+                    showError('请先完整听完音频');
+                    return;
+                }
+                
+                if (!exp2QuestionManager.allAnswered()) {
+                    showError('请回答所有问题');
+                    return;
+                }
+                
+                // 记录当前试次结果
+                const currentTrial = experimentData.exp2Trials[experimentData.currentExp2Index];
+                const answers = exp2QuestionManager.getAnswers();
+                const timestamps = exp2QuestionManager.answerTimestamps;
+                
+                experimentData.recordExp2Result(
+                    currentTrial.id,
+                    currentTrial.audio,
+                    currentTrial.raw_ID,
+                    experimentData.currentExp2Index + 1,
+                    answers,
+                    timestamps
+                );
+                
+                // 进入下一个试次前强制滚动到顶部
+                scrollToTop();
+                
+                // 短暂延迟确保滚动完成后再加载新试次
+                setTimeout(() => {
+                    experimentData.currentExp2Index++;
+                    experimentData.save();
+                    loadCurrentExp2Trial();
+                }, 10);
+            });
+            
+            // 其他事件监听...
+            // 事件监听 - 欢迎页面表单提交
+            document.getElementById('participant-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const name = document.getElementById('name').value.trim();
+                const id = document.getElementById('id').value.trim();
+                
+                if (!name || !id) {
+                    showError('请填写姓名和编号');
+                    return;
+                }
+                
+                // 清除当前可能加载的其他参与者数据
+                experimentData.clear();
+                
+                // 设置新的参与者信息
+                experimentData.participant.name = name;
+                experimentData.participant.id = id;
+                
+                // 尝试加载该参与者的历史数据
+                experimentData.load();
+                
+                pageManager.showPage('instructions-page');
+            });
+            
+            // 事件监听 - 开始实验
+            document.getElementById('start-experiment').addEventListener('click', function() {
+                // 加载实验材料
+                loadExperimentMaterials()
+                    .then(() => {
+                        pageManager.showPage('experiment1-page');
+                        loadCurrentExp1Trial();
+                    })
+                    .catch(error => {
+                        showError(error.message);
+                        console.error('Error loading materials:', error);
+                    });
+            });
+            
+            // 事件监听 - 开始实验二
+            document.getElementById('start-experiment2').addEventListener('click', function() {
+                pageManager.showPage('experiment2-page');
+                loadCurrentExp2Trial();
+            });
+            
+            // 事件监听 - 下载数据
+            document.getElementById('download-data').addEventListener('click', function() {
+                const filename = `audio_experiment_${experimentData.participant.id}_${new Date().getTime()}.csv`;
+                downloadCSV(experimentData, filename);
+            });
+            
+            // 事件监听 - 重新开始
+            document.getElementById('restart-experiment').addEventListener('click', function() {
+                experimentData.clear();
+                document.getElementById('participant-form').reset();
+                pageManager.showPage('welcome-page');
+            });
+            
+            // 事件监听 - 重试加载
+            document.getElementById('retry-load').addEventListener('click', function() {
+                hideError();
+                loadExperimentMaterials()
+                    .then(() => {
+                        if (experimentData.completedExp1) {
+                            pageManager.showPage('experiment2-page');
+                            loadCurrentExp2Trial();
+                        } else {
+                            pageManager.showPage('experiment1-page');
+                            loadCurrentExp1Trial();
+                        }
+                    })
+                    .catch(error => {
+                        showError(error.message);
+                    });
+            });
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', initExperiment);
+    </script>
+</body>
+</html>
+    
