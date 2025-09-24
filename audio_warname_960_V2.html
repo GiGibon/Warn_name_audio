@@ -495,11 +495,7 @@
                         class="px-6 py-3 bg-secondary hover:bg-secondary/90 text-white font-medium rounded-lg transition-all-300">
                         <i class="fa fa-download mr-2"></i>下载我的数据
                     </button>
-                    
-                    <button id="restart-experiment"
-                        class="px-6 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-all-300">
-                        <i class="fa fa-refresh mr-2"></i>重新开始
-                    </button>
+                
                 </div>
             </div>
         </div>
@@ -1523,12 +1519,7 @@
                 downloadCSV(experimentData, filename);
             });
             
-            // 重新开始
-            document.getElementById('restart-experiment').addEventListener('click', async function() {
-                await experimentData.clear();
-                document.getElementById('participant-form').reset();
-                pageManager.showPage('welcome-page');
-            });
+        
             
             // 重试加载
             document.getElementById('retry-load').addEventListener('click', async function() {
