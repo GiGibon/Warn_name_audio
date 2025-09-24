@@ -1,0 +1,11 @@
+raw_ID,context,audio
+1,你是时尚精品店店员，有顾客想知道该商店主要售卖的商品是什么。你需要告诉顾客商品的名称。,https://gigibon.github.io/Warn_name_audio/Audio/1_male_name_yanjing4.wav
+2,你是生鲜超市店员，顾客问你新进购的水果是什么。你需要告诉他水果的名称。,https://gigibon.github.io/Warn_name_audio/Audio/53_male_name_boluo4.wav
+3,你是便利店员工，一个老奶奶马上要踩到掉在地的商品，很可能会摔倒。情况紧急，你要立即提醒他。,https://gigibon.github.io/Warn_name_audio/Audio/211_male_warn_dangao4.wav
+4,你是科教玩具店店员，有几个孩子在店里打闹，快撞到物品，可能会受伤。情况紧急，你要立刻警示他们。,https://gigibon.github.io/Warn_name_audio/Audio/231_male_warn_wangyuanjing3.wav
+5,你是百货商店店员，有几个孩子在店里打闹，快撞到物品，可能会受伤。情况紧急，你要立刻警示他们。,https://gigibon.github.io/Warn_name_audio/Audio/232_male_warn_pintu1.wav
+6,你在餐厅打工，一个小孩在店里奔跑打闹，很可能打翻东西自己受伤。情况紧急，你要立即警示他。,https://gigibon.github.io/Warn_name_audio/Audio/235_male_warn_kafei1.wav
+7,你是超市店员，一个小孩马上踩到地上的水果，很可能滑倒。情况紧急，你要立即警示他。,https://gigibon.github.io/Warn_name_audio/Audio/236_male_warn_pingguo4.wav
+8,你是蔬菜摊主，一个小朋友问你卖的菜是什么。你需要告诉他蔬菜的名称。,https://gigibon.github.io/Warn_name_audio/Audio/1_female_name_yangcong2.wav
+9,你是精品店店员，有顾客的小狗在货架旁乱跳很可能弄坏某件商品。你要立刻给以警告。,https://gigibon.github.io/Warn_name_audio/Audio/152_female_warn_pixie3.wav
+10,你是饰品店店员，有顾客的小狗在货架旁乱跳很可能弄坏某件商品。你要立刻给以警告。,https://gigibon.github.io/Warn_name_audio/Audio/153_female_warn_guaizhang2.wav
