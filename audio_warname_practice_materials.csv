@@ -1,7 +1,4 @@
 raw_ID,context,audio
 1,你是水果店店主，一个小朋友问你水果的名字是什么，你要告诉他。,https://gigibon.github.io/Warn_name_audio/Audio/Practice/cjy_name_pingguo.wav
-2,你是家具城老板，员工问你最近新到的家具是什么，你要告诉他。,https://gigibon.github.io/Warn_name_audio/Audio/Practice/cjy_name_sahfa.wav
-3,你是车店店员，一个顾客问最近热销的产品是什么，你要告诉他。,https://gigibon.github.io/Warn_name_audio/Audio/Practice/cjy_name_sanlunche.wav
-4,你是水果店店主，一个小朋友在货架前打闹，差点把水果摊掀翻，你要立马警示他。,https://gigibon.github.io/Warn_name_audio/Audio/Practice/cjy_warn_pingguo.wav
-5,你是车店店员，一个小朋友没看到眼前的车子，可能被撞到，情况紧急，你要警示他。,https://gigibon.github.io/Warn_name_audio/Audio/Practice/cjy_warn_sanlunche.wav
-6,你是家具城老板，一个顾客没看到眼前的家具，马上要撞上去，可能受伤，你要立马警示他。,https://gigibon.github.io/Warn_name_audio/Audio/Practice/cjy_warn_shafa.wav
+2,你是家具城老板，一个顾客没看到眼前的家具，马上要撞上去，可能受伤，你要立马警示他。,https://gigibon.github.io/Warn_name_audio/Audio/Practice/cjy_warn_shafa.wav
+
